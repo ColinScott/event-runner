@@ -4,17 +4,22 @@ version := "0.1"
 
 scalaVersion := "2.13.3"
 
+val amazonSdkVersion = "2.13.74"
 val catsVersion = "2.1.1"
 val catsEffectVersion = "2.1.4"
 val circeVersion = "0.13.0"
 val http4sVersion = "0.21.7"
 val logbackVersion = "1.2.3"
+val refinedVersion = "0.9.15"
 
 val scalaCheckVersion = "1.14.3"
 val spec2Version = "4.10.2"
 
 libraryDependencies ++= Seq(
   "ch.qos.logback" % "logback-classic" % logbackVersion,
+
+  "eu.timepit" %% "refined" % refinedVersion,
+  "eu.timepit" %% "refined-cats" % refinedVersion,
 
   "io.circe" %% "circe-core" % circeVersion,
   "io.circe" %% "circe-generic" % circeVersion,
@@ -27,6 +32,9 @@ libraryDependencies ++= Seq(
   "org.typelevel" %% "cats-core" % catsVersion,
   "org.typelevel" %% "cats-effect" % catsEffectVersion,
 
+  "software.amazon.awssdk" % "sqs" % amazonSdkVersion,
+
+  "eu.timepit" %% "refined-scalacheck" % refinedVersion % Test,
   "org.scalacheck" % "scalacheck_2.13" % scalaCheckVersion % Test,
   "org.specs2" %% "specs2-core" % spec2Version % Test,
   "org.specs2" %% "specs2-scalacheck" % spec2Version % Test,

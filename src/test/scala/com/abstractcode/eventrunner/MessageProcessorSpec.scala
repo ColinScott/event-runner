@@ -24,7 +24,7 @@ class MessageProcessorSpec extends Specification {
 
   val alwaysSuccessHandler: MessageHandler[Test] = { case _: Message => ().rightIor }
   val testMessageContainer: MessageContainer[Test] = MessageContainer[Test](TestMessage("test"), () =>().rightIor)
-  val testSource: () => Test[MessageContainer[Test]] = () => testMessageContainer.rightIor
+  val testSource: () => Test[Option[MessageContainer[Test]]] = () => Some(testMessageContainer).rightIor
 
   def shouldNotRaiseErrorOnSuccess: MatchResult[Option[Unit]] = {
     val processor = new MessageProcessor[Test](testSource, alwaysSuccessHandler)
@@ -55,7 +55,7 @@ class MessageProcessorSpec extends Specification {
   def shouldFailIfFinalisationFails: MatchResult[Option[List[String]]] = {
     val testMessageContainer: MessageContainer[Test] = MessageContainer[Test](TestMessage("test"), () => List("failed").leftIor)
 
-    val processor = new MessageProcessor[Test](() => testMessageContainer.rightIor, alwaysSuccessHandler)
+    val processor = new MessageProcessor[Test](() => Some(testMessageContainer).rightIor, alwaysSuccessHandler)
 
     val result = processor.process()
 
@@ -65,7 +65,7 @@ class MessageProcessorSpec extends Specification {
   def shouldCallOperationsInExpectedOrder: MatchResult[Option[List[String]]] = {
     val testMessageContainer: MessageContainer[Test] = MessageContainer[Test](TestMessage("test"), () => Ior.both(List("finalised"), ()))
 
-    val processor = new MessageProcessor[Test](() => testMessageContainer.rightIor, {
+    val processor = new MessageProcessor[Test](() => Some(testMessageContainer).rightIor, {
       case _ => Ior.both(List("handled"), ())
     })
 

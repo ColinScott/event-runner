@@ -4,12 +4,11 @@ services:
   localstack:
     build: ./localstack
     environment:
-      - SERVICES=sqs,dynamodb
+      - SERVICES=sqs
       - DEFAULT_REGION=ap-southeast-2
       - DEBUG=${DEBUG- }
       - DATA_DIR=${DATA_DIR- }
       - PORT_WEB_UI=8081
       - DOCKER_HOST=unix:///var/run/docker.sock
     ports:
-      - "${PORT_WEB_UI-8080}:${PORT_WEB_UI-8080}"
       - "4566:4566"
