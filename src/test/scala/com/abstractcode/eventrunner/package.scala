@@ -1,8 +1,8 @@
 package com.abstractcode
 
 import org.http4s.Uri
-import org.scalacheck.{Arbitrary, Gen}
 import org.scalacheck.Gen.freqTuple
+import org.scalacheck.{Arbitrary, Gen}
 
 package object eventrunner {
   val uriGen: Gen[Uri] = for {
