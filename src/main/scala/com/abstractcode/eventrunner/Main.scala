@@ -1,13 +1,9 @@
 package com.abstractcode.eventrunner
 
+import cats.data.Validated.{Invalid, Valid}
 import cats.effect.{ExitCode, IO, IOApp}
 import com.abstractcode.eventrunner.MessageProcessor.MessageHandler
-import com.abstractcode.eventrunner.messaging.SqsMessageSource
-import com.abstractcode.eventrunner.messaging.SqsMessageSource._
-import eu.timepit.refined.refineV
-import org.http4s.implicits._
-import software.amazon.awssdk.auth.credentials.AwsBasicCredentials
-import software.amazon.awssdk.regions.Region
+import com.abstractcode.eventrunner.messaging.{ParseErrors, SqsMessageSource, SqsMessageSourceConfiguration}
 import software.amazon.awssdk.services._
 
 object Main extends IOApp{
@@ -15,23 +11,24 @@ object Main extends IOApp{
 
   val messageParser: sqs.model.Message => IO[Message] = _ => IO.pure(TestMessage())
 
-  val configuration: SqsMessageSourceConfiguration = SqsMessageSourceConfiguration(
-    uri"http://localhost:4576/000000000000/commands",
-    Region.AP_SOUTHEAST_2,
-    SqsLocalstack(uri"http://localhost:4566", AwsBasicCredentials.create("test", "test")),
-    refineV[WaitTimeConstraint](20).getOrElse(throw new Exception("This is a test"))
-  )
+  def loadConfiguration: IO[SqsMessageSourceConfiguration] = for {
+    env <- IO.delay(sys.env)
+    configuration <- SqsMessageSourceConfiguration(env) match {
+      case Valid(config) => IO.pure(config)
+      case Invalid(errors) => IO.raiseError(ParseErrors(errors))
+    }
+
+  } yield configuration
 
   def run(args: List[String]): IO[ExitCode] = {
-
-    val source: IO[() => IO[Option[MessageContainer[IO]]]] = SqsMessageSource.retrieveMessage(configuration)(messageParser)
 
     val handler:  MessageHandler[IO] = {
       case _: TestMessage => IO(println("Handled"))
     }
 
     for {
-      s <- source
+      configuration <- loadConfiguration
+      s <- SqsMessageSource.retrieveMessage(configuration)(messageParser)
       processor = new MessageProcessor[IO](s, handler)
       _ <- processor.process()
     } yield ExitCode.Success

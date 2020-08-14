@@ -15,23 +15,24 @@ class MessageProcessorSpec extends Specification {
   def is: SpecStructure =
     s2"""
          Message Processor should
-            not raise error for successful processing $shouldNotRaiseErrorOnSuccess
+            not raise error for successful processing $shouldReturnOnlySuccessOnSuccessfulProcessing
             fail if message source fails $shouldFailIfMessageSourceFails
             fail if message processing fails $shouldFailIfProcessingFails
             fail if message finalisation fails $shouldFailIfFinalisationFails
             order operations correctly $shouldCallOperationsInExpectedOrder
+            return only success if no message is received $shouldReturnOnlySuccessIfNoMessageIsReceived
       """
 
   val alwaysSuccessHandler: MessageHandler[Test] = { case _: Message => ().rightIor }
   val testMessageContainer: MessageContainer[Test] = MessageContainer[Test](TestMessage("test"), () =>().rightIor)
   val testSource: () => Test[Option[MessageContainer[Test]]] = () => Some(testMessageContainer).rightIor
 
-  def shouldNotRaiseErrorOnSuccess: MatchResult[Option[Unit]] = {
+  def shouldReturnOnlySuccessOnSuccessfulProcessing: MatchResult[Boolean] = {
     val processor = new MessageProcessor[Test](testSource, alwaysSuccessHandler)
 
     val result = processor.process()
 
-    result.right should beSome
+    result.isRight should beTrue
   }
 
   def shouldFailIfMessageSourceFails: MatchResult[Option[List[String]]] = {
@@ -72,5 +73,15 @@ class MessageProcessorSpec extends Specification {
     val result = processor.process()
 
     result.left should beSome(List("handled", "finalised"))
+  }
+
+  def shouldReturnOnlySuccessIfNoMessageIsReceived: MatchResult[Boolean] = {
+    val processor = new MessageProcessor[Test](() => None.rightIor, {
+      case _ => List("handled").leftIor
+    })
+
+    val result = processor.process()
+
+    result.isRight should beTrue
   }
 }
