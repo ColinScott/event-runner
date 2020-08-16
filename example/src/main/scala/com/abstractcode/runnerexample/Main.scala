@@ -12,9 +12,10 @@ import software.amazon.awssdk.services.sqs
 import scala.concurrent.duration.{Duration, FiniteDuration, SECONDS}
 
 object Main extends IOApp {
-  case class TestMessage() extends Message
+  sealed trait ExampleMessage
+  case class TestMessage() extends ExampleMessage
 
-  val messageParser: sqs.model.Message => IO[Message] = _ => IO.pure(TestMessage())
+  val messageParser: sqs.model.Message => IO[ExampleMessage] = _ => IO.pure(TestMessage())
 
   def loadConfiguration: IO[ExampleConfiguration] = for {
     env <- IO.delay(sys.env)
@@ -26,7 +27,7 @@ object Main extends IOApp {
   } yield configuration
 
   def run(args: List[String]): IO[ExitCode] = {
-    val handler:  MessageHandler[IO] = {
+    val handler:  MessageHandler[IO, ExampleMessage] = {
       case _: TestMessage => IO(println("Handled"))
     }
 
@@ -35,7 +36,7 @@ object Main extends IOApp {
       backoff = Backoff.backoff[IO, Unit](FiniteDuration(1, SECONDS))(FiniteDuration(5, SECONDS))(errorBackoff) _
       configuration <- loadConfiguration
       s <- SqsMessageSource.retrieveMessage(configuration.sqsMessageSourceConfiguration)(configuration.queueUri)(messageParser)
-      processor = new MessageProcessor[IO](s, handler)
+      processor = new MessageProcessor[IO, ExampleMessage](s, handler)
       _ <- Repeater.repeat(processor.process().flatMap(_ => Backoff.resetBackoff[IO, Unit](errorBackoff))
         .handleErrorWith(t => backoff(IO(println(t)))))
     } yield ExitCode.Success

@@ -4,13 +4,11 @@ import cats.{Applicative, Monad}
 import cats.implicits._
 import com.abstractcode.eventrunner.MessageProcessor.MessageHandler
 
-trait Message
+case class MessageContainer[F[_], Message](message: Message, finalise: () => F[Unit])
 
-case class MessageContainer[F[_]](message: Message, finalise: () => F[Unit])
-
-class MessageProcessor[F[_] : Monad](source: () => F[Option[MessageContainer[F]]], handler: MessageHandler[F]) {
+class MessageProcessor[F[_] : Monad, Message](source: () => F[Option[MessageContainer[F, Message]]], handler: MessageHandler[F, Message]) {
   def process(): F[Unit] = {
-    def processContainer(container: MessageContainer[F]): F[Unit] = for {
+    def processContainer(container: MessageContainer[F, Message]): F[Unit] = for {
       _ <- handler(container.message)
       _ <- container.finalise()
     } yield ()
@@ -23,5 +21,5 @@ class MessageProcessor[F[_] : Monad](source: () => F[Option[MessageContainer[F]]
 }
 
 object MessageProcessor {
-  type MessageHandler[F[_]] = PartialFunction[Message, F[Unit]]
+  type MessageHandler[F[_], Message] = PartialFunction[Message, F[Unit]]
 }
