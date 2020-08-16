@@ -1,8 +1,12 @@
-name := "event-runner"
+ThisBuild / organization := "com.abstractcode"
+ThisBuild / licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0"))
+ThisBuild / version := "0.1.0"
 
-version := "0.1"
+ThisBuild / scalaVersion := "2.13.3"
 
-scalaVersion := "2.13.3"
+lazy val commonSettings = Seq(
+  scalacOptions ++= compilerOptions
+)
 
 val amazonSdkVersion = "2.13.74"
 val catsVersion = "2.1.1"
@@ -15,12 +19,7 @@ val refinedVersion = "0.9.15"
 val scalaCheckVersion = "1.14.3"
 val spec2Version = "4.10.2"
 
-libraryDependencies ++= Seq(
-  "ch.qos.logback" % "logback-classic" % logbackVersion,
-
-  "eu.timepit" %% "refined" % refinedVersion,
-  "eu.timepit" %% "refined-cats" % refinedVersion,
-
+lazy val commonDependencies = Seq(
   "io.circe" %% "circe-core" % circeVersion,
   "io.circe" %% "circe-generic" % circeVersion,
   "io.circe" %% "circe-parser" % circeVersion,
@@ -32,16 +31,48 @@ libraryDependencies ++= Seq(
   "org.typelevel" %% "cats-core" % catsVersion,
   "org.typelevel" %% "cats-effect" % catsEffectVersion,
 
-  "software.amazon.awssdk" % "sqs" % amazonSdkVersion,
-
-  "eu.timepit" %% "refined-scalacheck" % refinedVersion % Test,
   "org.scalacheck" % "scalacheck_2.13" % scalaCheckVersion % Test,
   "org.specs2" %% "specs2-core" % spec2Version % Test,
   "org.specs2" %% "specs2-scalacheck" % spec2Version % Test,
   "org.specs2" %% "specs2-matcher-extra" % spec2Version % Test,
 )
 
-scalacOptions ++= Seq(
+lazy val eventRunnerDependencies = Seq(
+  "eu.timepit" %% "refined" % refinedVersion,
+  "eu.timepit" %% "refined-cats" % refinedVersion,
+
+  "software.amazon.awssdk" % "sqs" % amazonSdkVersion,
+
+  "eu.timepit" %% "refined-scalacheck" % refinedVersion % Test,
+)
+
+lazy val exampleDependencies = Seq(
+  "ch.qos.logback" % "logback-classic" % logbackVersion,
+)
+
+lazy val eventRunner = project
+  .in(file("runner"))
+  .settings(
+    name := "event-runner",
+    libraryDependencies ++= commonDependencies ++ eventRunnerDependencies,
+    commonSettings
+  )
+
+lazy val example = project
+  .in(file("example"))
+  .settings(
+    name := "event-runner",
+    libraryDependencies ++= commonDependencies ++ exampleDependencies,
+    commonSettings
+  )
+  .dependsOn(eventRunner)
+
+lazy val root = project
+  .in(file("."))
+  .aggregate(eventRunner, example)
+  .settings(skipOnPublishSettings)
+
+lazy val compilerOptions = Seq(
   "-deprecation", // Emit warning and location for usages of deprecated APIs.
   "-encoding", "utf-8", // Specify character encoding used by source files.
   "-explaintypes", // Explain type errors in more detail.
@@ -98,5 +129,7 @@ scalacOptions ++= Seq(
   "-Ywarn-unused:privates", // Warn if a private member is unused.
   "-Ywarn-value-discard", // Warn when non-Unit expression results are unused.
 )
+
+lazy val skipOnPublishSettings = Seq(skip in publish := true, publish := (()), publishLocal := (()), publishArtifact := false, publishTo := None)
 
 addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.11.0" cross CrossVersion.full)

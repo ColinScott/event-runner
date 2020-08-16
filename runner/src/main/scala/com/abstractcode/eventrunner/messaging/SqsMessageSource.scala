@@ -7,6 +7,7 @@ import cats.effect.Sync
 import cats.implicits._
 import com.abstractcode.eventrunner.messaging.SqsMessageSourceConfiguration.{SqsLocalstack, SqsProduction}
 import com.abstractcode.eventrunner.{Message, MessageContainer}
+import org.http4s.Uri
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.services._
 import software.amazon.awssdk.services.sqs.SqsClient
@@ -15,7 +16,7 @@ import software.amazon.awssdk.services.sqs.model.{DeleteMessageRequest, ReceiveM
 import scala.jdk.CollectionConverters._
 
 object SqsMessageSource {
-  def retrieveMessage[F[_] : Sync](configuration: SqsMessageSourceConfiguration)(messageParser: sqs.model.Message => F[Message]): F[() => F[Option[MessageContainer[F]]]] = {
+  def retrieveMessage[F[_] : Sync](configuration: SqsMessageSourceConfiguration)(queueUri: Uri)(messageParser: sqs.model.Message => F[Message]): F[() => F[Option[MessageContainer[F]]]] = {
     def buildSqsClient: F[SqsClient] = Sync[F].delay {
       val builder = SqsClient.builder()
       configuration.sqsEnvironment match {
@@ -30,10 +31,10 @@ object SqsMessageSource {
     buildSqsClient
       .map(
         client => {
-          val queueUri = configuration.queueUri.renderString
+          val queueUriString = queueUri.renderString
 
           val receiveRequest = ReceiveMessageRequest.builder()
-            .queueUrl(queueUri)
+            .queueUrl(queueUriString)
             .maxNumberOfMessages(1)
             .waitTimeSeconds(configuration.waitTime.value)
             .build()
@@ -45,7 +46,7 @@ object SqsMessageSource {
           def deleteMessage(message: sqs.model.Message): F[Unit] = Sync[F].delay(
             client.deleteMessage(
               DeleteMessageRequest.builder()
-                .queueUrl(queueUri)
+                .queueUrl(queueUriString)
                 .receiptHandle(message.receiptHandle())
                 .build()
             )).map(_ => ())
