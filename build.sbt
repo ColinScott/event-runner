@@ -20,10 +20,6 @@ val scalaCheckVersion = "1.14.3"
 val spec2Version = "4.10.2"
 
 lazy val commonDependencies = Seq(
-  "io.circe" %% "circe-core" % circeVersion,
-  "io.circe" %% "circe-generic" % circeVersion,
-  "io.circe" %% "circe-parser" % circeVersion,
-
   "org.http4s" %% "http4s-dsl" % http4sVersion,
   "org.http4s" %% "http4s-circe" % http4sVersion,
   "org.http4s" %% "http4s-client" % http4sVersion,
@@ -46,6 +42,12 @@ lazy val eventRunnerDependencies = Seq(
   "eu.timepit" %% "refined-scalacheck" % refinedVersion % Test,
 )
 
+lazy val circeDependencies = Seq(
+  "io.circe" %% "circe-core" % circeVersion,
+  "io.circe" %% "circe-generic" % circeVersion,
+  "io.circe" %% "circe-parser" % circeVersion,
+)
+
 lazy val exampleDependencies = Seq(
   "ch.qos.logback" % "logback-classic" % logbackVersion,
 )
@@ -58,18 +60,27 @@ lazy val eventRunner = project
     commonSettings
   )
 
-lazy val example = project
-  .in(file("example"))
+lazy val circe = project
+  .in(file("circe"))
   .settings(
-    name := "event-runner",
-    libraryDependencies ++= commonDependencies ++ exampleDependencies,
+    name := "event-runner-circe",
+    libraryDependencies ++= commonDependencies ++ circeDependencies,
     commonSettings
   )
   .dependsOn(eventRunner)
 
+lazy val example = project
+  .in(file("example"))
+  .settings(
+    name := "example client",
+    libraryDependencies ++= commonDependencies ++ exampleDependencies,
+    commonSettings
+  )
+  .dependsOn(eventRunner, circe)
+
 lazy val root = project
   .in(file("."))
-  .aggregate(eventRunner, example)
+  .aggregate(eventRunner, circe, example)
   .settings(skipOnPublishSettings)
 
 lazy val compilerOptions = Seq(

@@ -5,8 +5,9 @@ import java.net.URI
 import cats.data.OptionT
 import cats.effect.Sync
 import cats.implicits._
-import com.abstractcode.eventrunner.messaging.SqsMessageSourceConfiguration.{SqsLocalstack, SqsProduction}
 import com.abstractcode.eventrunner.MessageContainer
+import com.abstractcode.eventrunner.MessageProcessor.{MCF, MessageSource}
+import com.abstractcode.eventrunner.messaging.SqsMessageSourceConfiguration.{SqsLocalstack, SqsProduction}
 import org.http4s.Uri
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
 import software.amazon.awssdk.services._
@@ -15,8 +16,10 @@ import software.amazon.awssdk.services.sqs.model.{DeleteMessageRequest, ReceiveM
 
 import scala.jdk.CollectionConverters._
 
+class MultipleTypeParametersExample[G[_, _, _]] {}
+
 object SqsMessageSource {
-  def retrieveMessage[F[_] : Sync, Message](configuration: SqsMessageSourceConfiguration)(queueUri: Uri)(messageParser: sqs.model.Message => F[Message]): F[() => F[Option[MessageContainer[F, Message]]]] = {
+  def retrieveMessage[F[_] : Sync, Container <: MessageContainer[_, _]](configuration: SqsMessageSourceConfiguration)(queueUri: Uri)(messageParser: sqs.model.Message => F[Container]): F[MessageSource[F, Container]] = {
     def buildSqsClient: F[SqsClient] = Sync[F].delay {
       val builder = SqsClient.builder()
       configuration.sqsEnvironment match {
@@ -55,7 +58,7 @@ object SqsMessageSource {
             (for {
               sqsMessage <- OptionT(receiveMessage)
               parsedMessage <- OptionT.liftF(messageParser(sqsMessage))
-            } yield MessageContainer[F, Message](parsedMessage, () => deleteMessage(sqsMessage))).value
+            } yield MCF[F, Container](parsedMessage, () => deleteMessage(sqsMessage))).value
           }
         }
       )

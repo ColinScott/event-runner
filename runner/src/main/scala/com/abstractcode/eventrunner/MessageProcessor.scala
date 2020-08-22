@@ -1,16 +1,20 @@
 package com.abstractcode.eventrunner
 
-import cats.{Applicative, Monad}
 import cats.implicits._
-import com.abstractcode.eventrunner.MessageProcessor.MessageHandler
+import cats.{Applicative, Monad}
+import com.abstractcode.eventrunner.MessageProcessor.{MCF, MessageSource}
 
-case class MessageContainer[F[_], Message](message: Message, finalise: () => F[Unit])
+trait MetadataWithType[T] {
+  val messageType: T
+}
 
-class MessageProcessor[F[_] : Monad, Message](source: () => F[Option[MessageContainer[F, Message]]], handler: MessageHandler[F, Message]) {
+case class MessageContainer[Message, Metadata <: MetadataWithType[_]](message: Message, metadata: Metadata)
+
+class MessageProcessor[F[_] : Monad, Container <: MessageContainer[_, _]](source: MessageSource[F, Container], handler: MessageHandler[F, Container]) {
   def process(): F[Unit] = {
-    def processContainer(container: MessageContainer[F, Message]): F[Unit] = for {
-      _ <- handler(container.message)
-      _ <- container.finalise()
+    def processContainer(containerWithFinaliser: MCF[F,Container]): F[Unit] = for {
+      _ <- handler(containerWithFinaliser.container)
+      _ <- containerWithFinaliser.finalise()
     } yield ()
 
     for {
@@ -21,5 +25,7 @@ class MessageProcessor[F[_] : Monad, Message](source: () => F[Option[MessageCont
 }
 
 object MessageProcessor {
-  type MessageHandler[F[_], Message] = PartialFunction[Message, F[Unit]]
+  type MessageSource[F[_], Container <: MessageContainer[_, _]] = () => F[Option[MCF[F, Container]]]
+
+  case class MCF[F[_], Container <: MessageContainer[_, _]](container: Container, finalise: () => F[Unit])
 }
