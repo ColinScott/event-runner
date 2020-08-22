@@ -9,7 +9,7 @@ lazy val commonSettings = Seq(
   scalacOptions ++= compilerOptions
 )
 
-val amazonSdkVersion = "2.13.74"
+val amazonSdkVersion = "2.14.3"
 val catsVersion = "2.1.1"
 val catsEffectVersion = "2.1.4"
 val circeVersion = "0.13.0"
@@ -18,7 +18,7 @@ val logbackVersion = "1.2.3"
 val refinedVersion = "0.9.15"
 
 val scalaCheckVersion = "1.14.3"
-val spec2Version = "4.10.2"
+val spec2Version = "4.10.3"
 
 lazy val commonDependencies = Seq(
   "org.typelevel" %% "cats-core" % catsVersion,
