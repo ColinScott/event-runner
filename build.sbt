@@ -1,4 +1,5 @@
 ThisBuild / organization := "com.abstractcode"
+ThisBuild / organizationName := "Colin David Scott"
 ThisBuild / licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0"))
 ThisBuild / version := "0.1.0"
 
@@ -20,10 +21,6 @@ val scalaCheckVersion = "1.14.3"
 val spec2Version = "4.10.2"
 
 lazy val commonDependencies = Seq(
-  "org.http4s" %% "http4s-dsl" % http4sVersion,
-  "org.http4s" %% "http4s-circe" % http4sVersion,
-  "org.http4s" %% "http4s-client" % http4sVersion,
-
   "org.typelevel" %% "cats-core" % catsVersion,
   "org.typelevel" %% "cats-effect" % catsEffectVersion,
 
@@ -33,7 +30,13 @@ lazy val commonDependencies = Seq(
   "org.specs2" %% "specs2-matcher-extra" % spec2Version % Test,
 )
 
-lazy val eventRunnerDependencies = Seq(
+lazy val http4sDependencies = Seq(
+  "org.http4s" %% "http4s-dsl" % http4sVersion,
+  "org.http4s" %% "http4s-circe" % http4sVersion,
+  "org.http4s" %% "http4s-client" % http4sVersion,
+)
+
+lazy val sqsDependencies = Seq(
   "eu.timepit" %% "refined" % refinedVersion,
   "eu.timepit" %% "refined-cats" % refinedVersion,
 
@@ -56,9 +59,18 @@ lazy val eventRunner = project
   .in(file("runner"))
   .settings(
     name := "event-runner",
-    libraryDependencies ++= commonDependencies ++ eventRunnerDependencies,
+    libraryDependencies ++= commonDependencies ++ http4sDependencies,
     commonSettings
   )
+
+lazy val sqs = project
+  .in(file("sqs"))
+  .settings(
+    name := "event-runner-sqs",
+    libraryDependencies ++= commonDependencies ++ sqsDependencies ++ http4sDependencies,
+    commonSettings
+  )
+  .dependsOn(eventRunner)
 
 lazy val circe = project
   .in(file("circe"))
@@ -69,18 +81,27 @@ lazy val circe = project
   )
   .dependsOn(eventRunner)
 
+lazy val sqsCirce = project
+  .in(file("sqs-circe"))
+  .settings(
+    name := "event-runner-sqs-circe",
+    libraryDependencies ++= commonDependencies ++ circeDependencies,
+    commonSettings
+  )
+  .dependsOn(eventRunner, sqs, circe)
+
 lazy val example = project
   .in(file("example"))
   .settings(
     name := "example client",
-    libraryDependencies ++= commonDependencies ++ exampleDependencies,
+    libraryDependencies ++= commonDependencies ++ exampleDependencies ++ http4sDependencies,
     commonSettings
   )
-  .dependsOn(eventRunner, circe)
+  .dependsOn(eventRunner, sqs, circe, sqsCirce)
 
 lazy val root = project
   .in(file("."))
-  .aggregate(eventRunner, circe, example)
+  .aggregate(eventRunner, sqs, circe, sqsCirce, example)
   .settings(skipOnPublishSettings)
 
 lazy val compilerOptions = Seq(

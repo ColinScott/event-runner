@@ -2,9 +2,9 @@ package com.abstractcode.eventrunner.messaging
 
 import cats.data.ValidatedNec
 import cats.implicits._
-import com.abstractcode.eventrunner.Configuration.getOptionalUri
-import com.abstractcode.eventrunner.ParseError
-import com.abstractcode.eventrunner.ParseError.{InvalidFormat, NotProvidedOrEmpty}
+import com.abstractcode.eventrunner.configuration.getOptionalUri
+import com.abstractcode.eventrunner.configuration.ParseError
+import com.abstractcode.eventrunner.configuration.ParseError.{InvalidFormat, NotProvidedOrEmpty}
 import com.abstractcode.eventrunner.messaging.SqsMessageSourceConfiguration.{SqsEnvironment, WaitTime}
 import eu.timepit.refined._
 import eu.timepit.refined.api.Refined

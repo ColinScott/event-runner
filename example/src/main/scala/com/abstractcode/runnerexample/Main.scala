@@ -4,11 +4,13 @@ import cats.data.Validated.{Invalid, Valid}
 import cats.effect.concurrent.Ref
 import cats.effect.{ExitCode, IO, IOApp}
 import cats.implicits._
-import com.abstractcode.eventrunner.messaging.SqsMessageSource
 import com.abstractcode.eventrunner._
 import com.abstractcode.eventrunner.circe.MessageContainerDecoder
+import com.abstractcode.eventrunner.configuration.ParseErrors
+import com.abstractcode.eventrunner.messaging.SqsMessageSource
+import com.abstractcode.eventrunner.sqscirce.MessageParser
+import io.circe.{Decoder, HCursor}
 import software.amazon.awssdk.services.sqs
-import io.circe.{Decoder, HCursor, parser}
 
 import scala.concurrent.duration.{Duration, FiniteDuration, SECONDS}
 
@@ -41,9 +43,7 @@ object Main extends IOApp {
   implicit val containerDecoder: Decoder[ExampleContainer] =
     MessageContainerDecoder.build(messageDecoders)(metadataDecoder)
 
-  val messageParser: sqs.model.Message => IO[ExampleContainer] = sqsMessage => for {
-    parsed <- IO.fromEither(parser.decode[ExampleContainer](sqsMessage.body()))
-  }yield parsed
+  val messageParser: sqs.model.Message => IO[ExampleContainer] = MessageParser.build[IO, ExampleContainer]
 
   def loadConfiguration: IO[ExampleConfiguration] = for {
     env <- IO.delay(sys.env)

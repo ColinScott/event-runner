@@ -10,11 +10,9 @@ import org.specs2.specification.core.SpecStructure
 import org.specs2.{ScalaCheck, Specification}
 
 class MessageContainerDecoderSpec extends Specification with ScalaCheck {
-
   case class TestMetadata(messageType: String) extends MetadataWithType[String]
 
   sealed trait TestMessage
-
   case class FirstTestMessage(count: Int) extends TestMessage
 
   type TestContainer = MessageContainer[TestMessage, TestMetadata]
