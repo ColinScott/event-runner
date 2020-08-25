@@ -12,14 +12,14 @@ import scala.concurrent.duration.{DAYS, Duration, FiniteDuration, SECONDS}
 class BackoffSpec extends Specification with Tables {
   def is: SpecStructure =
     s2"""
-         Backoff should
+         linearBackoff should
             store updated backoff ${
       "initial" | "increment" | "maximum" | "expected" |>
         FiniteDuration(0, SECONDS) ! FiniteDuration(5, SECONDS) ! FiniteDuration(60, SECONDS) ! FiniteDuration(5, SECONDS) |
         FiniteDuration(10, SECONDS) ! FiniteDuration(5, SECONDS) ! FiniteDuration(60, SECONDS) ! FiniteDuration(15, SECONDS) |
         FiniteDuration(60, SECONDS) ! FiniteDuration(5, SECONDS) ! FiniteDuration(60, SECONDS) ! FiniteDuration(60, SECONDS) |
         FiniteDuration(-10, SECONDS) ! FiniteDuration(5, SECONDS) ! FiniteDuration(60, SECONDS) ! FiniteDuration(0, SECONDS) | {
-        (initial, increment, maximum, expected) => shouldStoreUpdatedBackoff(initial, increment, maximum, expected)
+        (initial, increment, maximum, expected) => linearBackoffStoreUpdatedBackoff(initial, increment, maximum, expected)
       }
     }
             sleep ${
@@ -30,11 +30,10 @@ class BackoffSpec extends Specification with Tables {
         (initial, expected) => shouldSleepForInitialBackoff(initial, expected)
       }
     }
-            reset $shouldReset
+          Can reset $shouldReset
       """
 
-
-  def shouldStoreUpdatedBackoff(initial: FiniteDuration, increment: FiniteDuration, maximum: FiniteDuration, expected: FiniteDuration): MatchResult[Any] = {
+  def linearBackoffStoreUpdatedBackoff(initial: FiniteDuration, increment: FiniteDuration, maximum: FiniteDuration, expected: FiniteDuration): MatchResult[Any] = {
     implicit val timer: Timer[IO] = new Timer[IO] {
       def clock: Clock[IO] = throw new NotImplementedError()
 
@@ -43,7 +42,7 @@ class BackoffSpec extends Specification with Tables {
 
     val result = for {
       ref <- Ref.of[IO, FiniteDuration](initial)
-      _ <- Backoff.backoff[IO, Unit](increment)(maximum)(ref)(IO.unit)
+      _ <- Backoff.linearBackoff(maximum)(increment)(ref)(IO.unit)
       value <- ref.get
     } yield value
 
@@ -59,7 +58,7 @@ class BackoffSpec extends Specification with Tables {
     val result = for {
       ref <- Ref.of[IO, FiniteDuration](initial)
       sleep <- Ref.of[IO, FiniteDuration](FiniteDuration(-10, DAYS))
-      _ <- Backoff.backoff[IO, Unit](FiniteDuration(5, SECONDS))(FiniteDuration(60, SECONDS))(ref)(IO.unit)(timer(sleep), Sync[IO])
+      _ <- Backoff.linearBackoff(FiniteDuration(60, SECONDS))(FiniteDuration(5, SECONDS))(ref)(IO.unit)(timer(sleep), Sync[IO])
       value <- sleep.get
     } yield value
 

@@ -61,7 +61,7 @@ object Main extends IOApp {
 
     val result = for {
       errorBackoff <- Ref.of[IO, FiniteDuration](Duration.Zero)
-      backoff = Backoff.backoff[IO, Unit](FiniteDuration(1, SECONDS))(FiniteDuration(5, SECONDS))(errorBackoff) _
+      backoff = Backoff.linearBackoff[IO, Unit](FiniteDuration(5, SECONDS))(FiniteDuration(1, SECONDS))(errorBackoff) _
       configuration <- loadConfiguration
       s <- SqsMessageSource.retrieveMessage(configuration.sqsMessageSourceConfiguration)(configuration.queueUri)(messageParser)
       processor = new MessageProcessor[IO, ExampleContainer](s, handler)
