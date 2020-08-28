@@ -59,7 +59,7 @@ lazy val eventRunner = project
   .in(file("runner"))
   .settings(
     name := "event-runner",
-    libraryDependencies ++= commonDependencies ++ http4sDependencies,
+    libraryDependencies ++= commonDependencies ++ http4sDependencies ++ circeDependencies,
     commonSettings
   )
 

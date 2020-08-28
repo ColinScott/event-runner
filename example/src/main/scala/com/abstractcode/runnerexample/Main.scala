@@ -7,6 +7,7 @@ import cats.implicits._
 import com.abstractcode.eventrunner._
 import com.abstractcode.eventrunner.circe.MessageContainerDecoder
 import com.abstractcode.eventrunner.configuration.ParseErrors
+import com.abstractcode.eventrunner.logging.{ConsoleLogged, Logged, _}
 import com.abstractcode.eventrunner.messaging.SqsMessageSource
 import com.abstractcode.eventrunner.sqscirce.MessageParser
 import io.circe.{Decoder, HCursor}
@@ -55,8 +56,10 @@ object Main extends IOApp {
   } yield configuration
 
   def run(args: List[String]): IO[ExitCode] = {
+    implicit val logged: Logged[IO] = new ConsoleLogged[IO]()
+
     val handler: MessageHandler[IO, ExampleContainer] = {
-      case container => IO(println(s"Handled ${container.metadata} ${container.message}"))
+      case container => logged.log(s"Handled ${container.metadata} ${container.message}")
     }
 
     val result = for {
@@ -66,12 +69,12 @@ object Main extends IOApp {
       s <- SqsMessageSource.retrieveMessage(configuration.sqsMessageSourceConfiguration)(configuration.queueUri)(messageParser)
       processor = new MessageProcessor[IO, ExampleContainer](s, handler)
       _ <- Repeater.repeat(processor.process().flatMap(_ => Backoff.resetExponentialBackoff[IO](errorBackoff))
-        .handleErrorWith(t => backoff(IO(println(t)))))
+        .handleErrorWith(t => backoff(logged.log(t))))
     } yield ExitCode.Success
 
     result.recoverWith {
       case ParseErrors(errors) => for {
-        _ <- IO(println(errors.map(_.show).foldLeft("")((b, a) => if (b.isEmpty) a else s"$b\n$a")))
+        _ <- logged.log(errors.map(_.show).foldLeft("")((b, a) => if (b.isEmpty) a else s"$b\n$a"))
       } yield ExitCode.Error
     }
   }
