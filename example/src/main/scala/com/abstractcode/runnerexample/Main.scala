@@ -12,7 +12,7 @@ import com.abstractcode.eventrunner.sqscirce.MessageParser
 import io.circe.{Decoder, HCursor}
 import software.amazon.awssdk.services.sqs
 
-import scala.concurrent.duration.{Duration, FiniteDuration, SECONDS}
+import scala.concurrent.duration.{FiniteDuration, SECONDS}
 
 object Main extends IOApp {
   sealed trait ExampleMessage
@@ -60,12 +60,12 @@ object Main extends IOApp {
     }
 
     val result = for {
-      errorBackoff <- Ref.of[IO, FiniteDuration](Duration.Zero)
-      backoff = Backoff.linearBackoff[IO, Unit](FiniteDuration(5, SECONDS))(FiniteDuration(1, SECONDS))(errorBackoff) _
+      errorBackoff <- Ref.of[IO, Int](0)
+      backoff = Backoff.exponentialBackoff[IO, Unit](FiniteDuration(30, SECONDS))(1.5, FiniteDuration(1, SECONDS))(errorBackoff) _
       configuration <- loadConfiguration
       s <- SqsMessageSource.retrieveMessage(configuration.sqsMessageSourceConfiguration)(configuration.queueUri)(messageParser)
       processor = new MessageProcessor[IO, ExampleContainer](s, handler)
-      _ <- Repeater.repeat(processor.process().flatMap(_ => Backoff.resetBackoff[IO, Unit](errorBackoff))
+      _ <- Repeater.repeat(processor.process().flatMap(_ => Backoff.resetExponentialBackoff[IO](errorBackoff))
         .handleErrorWith(t => backoff(IO(println(t)))))
     } yield ExitCode.Success
 

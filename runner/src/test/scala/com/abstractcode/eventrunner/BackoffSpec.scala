@@ -22,23 +22,41 @@ class BackoffSpec extends Specification with ScalaCheck with Tables {
          linearBackoff should
             store updated backoff ${
       "initial" | "increment" | "maximum" | "expected" |>
-        FiniteDuration(0, SECONDS) ! FiniteDuration(5, SECONDS) ! FiniteDuration(60, SECONDS) ! FiniteDuration(5, SECONDS) |
-        FiniteDuration(10, SECONDS) ! FiniteDuration(5, SECONDS) ! FiniteDuration(60, SECONDS) ! FiniteDuration(15, SECONDS) |
-        FiniteDuration(60, SECONDS) ! FiniteDuration(5, SECONDS) ! FiniteDuration(60, SECONDS) ! FiniteDuration(60, SECONDS) |
-        FiniteDuration(-10, SECONDS) ! FiniteDuration(5, SECONDS) ! FiniteDuration(60, SECONDS) ! FiniteDuration(0, SECONDS) | {
-        (initial, increment, maximum, expected) => linearBackoffStoreUpdatedBackoff(initial, increment, maximum, expected)
-      }
+        0 ! 5 ! 60 ! 5 |
+        10 ! 5 ! 60 ! 15 |
+        60 ! 5 ! 60 ! 60 |
+        -10 ! 5 ! 60 ! 0 |
+        linearBackoffStoreUpdatedBackoff
     }
             sleep ${
       "initial" | "expected" |>
-        FiniteDuration(0, SECONDS) ! FiniteDuration(0, SECONDS) |
-        FiniteDuration(10, SECONDS) ! FiniteDuration(10, SECONDS) |
-        FiniteDuration(-10, SECONDS) ! FiniteDuration(0, SECONDS) | {
-        (initial, expected) => shouldSleepForInitialBackoff(initial, expected)
-      }
+        0 ! 0 |
+        10 ! 10 |
+        -10 ! 0 |
+        linearShouldSleepForInitialBackoff
     }
+            reset $linearCanReset
 
-          Can reset $shouldReset
+         exponentialBackoff should
+            store updated backoff with maximum ${
+      "initial" | "expected" |>
+        0 ! 1 |
+        1 ! 2 |
+        2 ! 3 |
+        8 ! 8 |
+        -1 ! 0 |
+        exponentialBackoffStoreUpdatedBackoff
+    }
+            sleep ${
+      "initial" | "expected" |>
+        0 ! 0 |
+        2 ! 4 |
+        3 ! 9 |
+        9 ! 60 |
+        -10 ! 0 |
+        exponentialShouldSleepForInitialBackoff
+    }
+            reset $exponentialCanReset
       """
 
   val doNothingTimer: Timer[IO] = new Timer[IO] {
@@ -97,36 +115,69 @@ class BackoffSpec extends Specification with ScalaCheck with Tables {
         }
     }
 
-  def linearBackoffStoreUpdatedBackoff(initial: FiniteDuration, increment: FiniteDuration, maximum: FiniteDuration, expected: FiniteDuration): MatchResult[Any] = {
+  def linearBackoffStoreUpdatedBackoff(initial: Int, increment: Int, maximum: Int, expected: Int): MatchResult[Any] = {
     implicit val timer: Timer[IO] = doNothingTimer
 
     val result = for {
-      ref <- Ref.of[IO, FiniteDuration](initial)
-      _ <- Backoff.linearBackoff(maximum)(increment)(ref)(IO.unit)
+      ref <- Ref.of[IO, FiniteDuration](FiniteDuration(initial, SECONDS))
+      _ <- Backoff.linearBackoff(FiniteDuration(maximum, SECONDS))(FiniteDuration(increment, SECONDS))(ref)(IO.unit)
       value <- ref.get
     } yield value
 
-    result.unsafeRunSync() shouldEqual expected
+    result.unsafeRunSync() shouldEqual FiniteDuration(expected, SECONDS)
   }
 
-  def shouldSleepForInitialBackoff(initial: FiniteDuration, expected: FiniteDuration): MatchResult[Any] = {
+  def linearShouldSleepForInitialBackoff(initial: Int, expected: Int): MatchResult[Any] = {
     val result = for {
-      ref <- Ref.of[IO, FiniteDuration](initial)
+      ref <- Ref.of[IO, FiniteDuration](FiniteDuration(initial, SECONDS))
       sleep <- Ref.of[IO, FiniteDuration](FiniteDuration(-10, DAYS))
       _ <- Backoff.linearBackoff(FiniteDuration(60, SECONDS))(FiniteDuration(5, SECONDS))(ref)(IO.unit)(buildTimerRef(sleep), Sync[IO])
       value <- sleep.get
     } yield value
 
-    result.unsafeRunSync() shouldEqual expected
+    result.unsafeRunSync() shouldEqual FiniteDuration(expected, SECONDS)
   }
 
-  def shouldReset: MatchResult[Any] = {
+  def linearCanReset: MatchResult[Any] = {
     val result = for {
       ref <- Ref.of[IO, FiniteDuration](FiniteDuration(5, SECONDS))
-      _ <- Backoff.resetBackoff[IO, Unit](ref)
+      _ <- Backoff.resetLinearBackoff[IO](ref)
       value <- ref.get
     } yield value
 
     result.unsafeRunSync() shouldEqual Duration.Zero
+  }
+
+  def exponentialBackoffStoreUpdatedBackoff(initial: Int, expected: Int): MatchResult[Any] = {
+    implicit val timer: Timer[IO] = doNothingTimer
+
+    val result = for {
+      ref <- Ref.of[IO, Int](initial)
+      _ <- Backoff.exponentialBackoff(FiniteDuration(60, SECONDS))(2.0, FiniteDuration(1, SECONDS))(ref)(IO.unit)
+      value <- ref.get
+    } yield value
+
+    result.unsafeRunSync() shouldEqual expected
+  }
+
+  def exponentialShouldSleepForInitialBackoff(initial: Int, expected: Int): MatchResult[Any] = {
+    val result = for {
+      ref <- Ref.of[IO, Int](initial)
+      sleep <- Ref.of[IO, FiniteDuration](FiniteDuration(-10, DAYS))
+      _ <- Backoff.exponentialBackoff(FiniteDuration(60, SECONDS))(2.0, FiniteDuration(1, SECONDS))(ref)(IO.unit)(buildTimerRef(sleep), Sync[IO])
+      value <- sleep.get
+    } yield value
+
+    result.unsafeRunSync() shouldEqual FiniteDuration(expected, SECONDS)
+  }
+
+  def exponentialCanReset: MatchResult[Any] = {
+    val result = for {
+      ref <- Ref.of[IO, Int](234)
+      _ <- Backoff.resetExponentialBackoff[IO](ref)
+      value <- ref.get
+    } yield value
+
+    result.unsafeRunSync() shouldEqual 0
   }
 }
