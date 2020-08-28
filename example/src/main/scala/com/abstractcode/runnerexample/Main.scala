@@ -74,7 +74,7 @@ object Main extends IOApp {
 
     result.recoverWith {
       case ParseErrors(errors) => for {
-        _ <- logged.log(errors.map(_.show).foldLeft("")((b, a) => if (b.isEmpty) a else s"$b\n$a"))
+        _ <- logged.log(errors)
       } yield ExitCode.Error
     }
   }
