@@ -11,7 +11,7 @@ lazy val commonSettings = Seq(
 
 val amazonSdkVersion = "2.14.3"
 val catsVersion = "2.1.1"
-val catsEffectVersion = "2.1.4"
+val catsEffectVersion = "2.2.0-RC3"
 val circeVersion = "0.13.0"
 val http4sVersion = "0.21.7"
 val logbackVersion = "1.2.3"
