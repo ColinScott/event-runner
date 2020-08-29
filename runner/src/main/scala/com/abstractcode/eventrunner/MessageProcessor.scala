@@ -4,11 +4,12 @@ import cats.implicits._
 import cats.{Applicative, Monad}
 import com.abstractcode.eventrunner.MessageProcessor.{MCF, MessageSource}
 
-trait MetadataWithType[T] {
-  val messageType: T
+trait Metadata[T, MT] {
+  val transactionId: T
+  val messageType: MT
 }
 
-case class MessageContainer[Message, Metadata <: MetadataWithType[_]](message: Message, metadata: Metadata)
+case class MessageContainer[Message, MD <: Metadata[_, _]](message: Message, metadata: MD)
 
 class MessageProcessor[F[_] : Monad, Container <: MessageContainer[_, _]](source: MessageSource[F, Container], handler: MessageHandler[F, Container]) {
   def process(): F[Unit] = {

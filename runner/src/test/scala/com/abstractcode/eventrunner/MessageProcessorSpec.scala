@@ -8,7 +8,7 @@ import org.specs2.matcher.MatchResult
 import org.specs2.specification.core.SpecStructure
 
 case class TestMessage(message: String)
-case class TestMetadata(transactionId: String, messageType: String) extends MetadataWithType[String]
+case class TestMetadata(transactionId: String, messageType: String) extends Metadata[String, String]
 
 class MessageProcessorSpec extends Specification {
   type Test[A] = Ior[List[String], A]

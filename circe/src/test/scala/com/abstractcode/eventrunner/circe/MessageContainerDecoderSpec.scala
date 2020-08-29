@@ -1,16 +1,18 @@
 package com.abstractcode.eventrunner.circe
 
-import com.abstractcode.eventrunner.{MessageContainer, MetadataWithType}
+import java.util.UUID
+
+import com.abstractcode.eventrunner.{MessageContainer, Metadata}
 import io.circe
 import io.circe.{Decoder, DecodingFailure, HCursor, parser}
 import org.scalacheck.Gen
 import org.specs2.matcher.MatchResult
-import org.specs2.scalacheck.{ScalaCheckFunction1, ScalaCheckFunction2}
+import org.specs2.scalacheck.{ScalaCheckFunction2, ScalaCheckFunction3}
 import org.specs2.specification.core.SpecStructure
 import org.specs2.{ScalaCheck, Specification}
 
 class MessageContainerDecoderSpec extends Specification with ScalaCheck {
-  case class TestMetadata(messageType: String) extends MetadataWithType[String]
+  case class TestMetadata(transactionId: UUID, messageType: String) extends Metadata[UUID, String]
 
   sealed trait TestMessage
   case class FirstTestMessage(count: Int) extends TestMessage
@@ -18,8 +20,9 @@ class MessageContainerDecoderSpec extends Specification with ScalaCheck {
   type TestContainer = MessageContainer[TestMessage, TestMetadata]
 
   val metadataDecoder: Decoder[TestMetadata] = (c: HCursor) => for {
+    transactionId <- c.downField("transactionId").as[UUID]
     messageType <- c.downField("messageType").as[String]
-  } yield TestMetadata(messageType)
+  } yield TestMetadata(transactionId, messageType)
 
   val firstMessageDecoder: Decoder[TestMessage] = (c: HCursor) => for {
     count <- c.downField("count").as[Int]
@@ -29,12 +32,14 @@ class MessageContainerDecoderSpec extends Specification with ScalaCheck {
     s2"""
          MessageContainerDecoder should
             decode message with known type $decodeWithKnownType
-            error with unknown type $errorWithUnknownType
+            error on unknown type $errorOnUnknownType
+            error on missing type $errorOnMissingType
+            error on missing transaction ID $errorOnMissingTransactionId
             error on decode failure $errorOnDecodeFailure
     """
 
-  def decodeWithKnownType: ScalaCheckFunction2[String, Int, MatchResult[Either[circe.Error, TestMessage]]] =
-    prop { (messageType: String, count: Int) =>
+  def decodeWithKnownType: ScalaCheckFunction3[UUID, String, Int, MatchResult[Either[circe.Error, TestMessage]]] =
+    prop { (transactionId: UUID, messageType: String, count: Int) =>
 
       val messageDecoders: String => Option[Decoder[TestMessage]] = {
         case `messageType` => Some(firstMessageDecoder)
@@ -45,6 +50,7 @@ class MessageContainerDecoderSpec extends Specification with ScalaCheck {
 
       val messageJson =
         s"""{
+           | "transactionId": "$transactionId",
            | "messageType": "$messageType",
            | "count": $count
            |}""".stripMargin
@@ -52,29 +58,66 @@ class MessageContainerDecoderSpec extends Specification with ScalaCheck {
       val result = parser.decode[TestContainer](messageJson)
 
       result.map(_.message) should beRight(FirstTestMessage(count))
-    }.setGen1(Gen.alphaStr)
+    }.setGen2(Gen.alphaStr)
 
-  def errorWithUnknownType: ScalaCheckFunction2[String, Int, MatchResult[Either[circe.Error, TestContainer]]] =
+  def errorOnUnknownType: ScalaCheckFunction3[UUID, String, Int, MatchResult[Either[circe.Error, TestContainer]]] =
     prop {
-      (messageType: String, count: Int) =>
+      (transactionId: UUID, messageType: String, count: Int) =>
         val messageDecoders: String => Option[Decoder[TestMessage]] = _ => None
 
         implicit val decoder: Decoder[TestContainer] = MessageContainerDecoder.build(messageDecoders)(metadataDecoder)
 
         val messageJson =
           s"""{
+             | "transactionId": "$transactionId",
              | "messageType": "$messageType",
              | "count": $count
              |}""".stripMargin
 
         val result = parser.decode[TestContainer](messageJson)
 
-        result should beLeft(DecodingFailure(s"No decoder for message type ${messageType}", Nil))
-    }.setGen1(Gen.alphaStr)
+        result should beLeft(DecodingFailure(s"No decoder for message type $messageType", Nil))
+    }.setGen2(Gen.alphaStr)
 
-  def errorOnDecodeFailure: ScalaCheckFunction1[String, MatchResult[Either[circe.Error, TestContainer]]] =
+  def errorOnMissingType: ScalaCheckFunction2[UUID, Int, MatchResult[Either[circe.Error, TestContainer]]] =
     prop {
-      (messageType: String) =>
+      (transactionId: UUID, count: Int) =>
+        val messageDecoders: String => Option[Decoder[TestMessage]] = _ => None
+
+        implicit val decoder: Decoder[TestContainer] = MessageContainerDecoder.build(messageDecoders)(metadataDecoder)
+
+        val messageJson =
+          s"""{
+             | "transactionId": "$transactionId",
+             | "count": $count
+             |}""".stripMargin
+
+        val result = parser.decode[TestContainer](messageJson)
+
+        result should beLeft()
+    }
+
+  def errorOnMissingTransactionId: ScalaCheckFunction2[UUID, Int, MatchResult[Either[circe.Error, TestContainer]]] =
+    prop {
+      (transactionId: UUID, count: Int) =>
+        val messageDecoders: String => Option[Decoder[TestMessage]] = _ => None
+
+        implicit val decoder: Decoder[TestContainer] = MessageContainerDecoder.build(messageDecoders)(metadataDecoder)
+
+        val messageJson =
+          s"""{
+             | "transactionId": "$transactionId",
+             | "count": $count
+             |}""".stripMargin
+
+        val result = parser.decode[TestContainer](messageJson)
+
+        result should beLeft()
+    }
+
+  def errorOnDecodeFailure: ScalaCheckFunction2[UUID, String, MatchResult[Either[circe.Error, TestContainer]]] =
+    prop {
+      (transactionId: UUID, messageType: String) =>
         val messageDecoders: String => Option[Decoder[TestMessage]] = {
           case `messageType` => Some(firstMessageDecoder)
           case _ => None
@@ -84,11 +127,12 @@ class MessageContainerDecoderSpec extends Specification with ScalaCheck {
 
         val messageJson =
           s"""{
+             | "transactionId": "$transactionId",
              | "messageType": "$messageType"
              |}""".stripMargin
 
         val result = parser.decode[TestContainer](messageJson)
 
         result should beLeft()
-    }.setGen(Gen.alphaStr)
+    }.setGen2(Gen.alphaStr)
 }

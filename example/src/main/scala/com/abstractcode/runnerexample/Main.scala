@@ -21,10 +21,9 @@ import scala.concurrent.duration.{FiniteDuration, SECONDS}
 object Main extends IOApp {
 
   sealed trait ExampleMessage
-
   case class TestMessage(count: Int) extends ExampleMessage
 
-  case class ExampleMetadata(transactionId: String, messageType: String) extends MetadataWithType[String]
+  case class ExampleMetadata(transactionId: String, messageType: String) extends Metadata[String, String]
 
   type ExampleContainer = MessageContainer[ExampleMessage, ExampleMetadata]
 
