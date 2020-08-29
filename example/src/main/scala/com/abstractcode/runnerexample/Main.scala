@@ -1,8 +1,10 @@
 package com.abstractcode.runnerexample
 
+import java.util.concurrent.Executors
+
 import cats.data.Validated.{Invalid, Valid}
 import cats.effect.concurrent.Ref
-import cats.effect.{ExitCode, IO, IOApp}
+import cats.effect.{Blocker, ExitCode, IO, IOApp}
 import cats.implicits._
 import com.abstractcode.eventrunner._
 import com.abstractcode.eventrunner.circe.MessageContainerDecoder
@@ -13,10 +15,13 @@ import com.abstractcode.eventrunner.sqscirce.MessageParser
 import io.circe.{Decoder, HCursor}
 import software.amazon.awssdk.services.sqs
 
+import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{FiniteDuration, SECONDS}
 
 object Main extends IOApp {
+
   sealed trait ExampleMessage
+
   case class TestMessage(count: Int) extends ExampleMessage
 
   case class ExampleMetadata(transactionId: String, messageType: String) extends MetadataWithType[String]
@@ -62,17 +67,25 @@ object Main extends IOApp {
       case container => logged.log(s"Handled ${container.metadata} ${container.message}")
     }
 
-    val result = for {
+    val blocker = Blocker.liftExecutionContext(ExecutionContext.fromExecutor(Executors.newCachedThreadPool()))
+
+    val outer = for {
       errorBackoff <- Ref.of[IO, Int](0)
       backoff = Backoff.exponentialBackoff[IO, Unit](FiniteDuration(30, SECONDS))(1.5, FiniteDuration(1, SECONDS))(errorBackoff) _
       configuration <- loadConfiguration
-      s <- SqsMessageSource.retrieveMessage(configuration.sqsMessageSourceConfiguration)(configuration.queueUri)(messageParser)
-      processor = new MessageProcessor[IO, ExampleContainer](s, handler)
-      _ <- Repeater.repeat(processor.process().flatMap(_ => Backoff.resetExponentialBackoff[IO](errorBackoff))
-        .handleErrorWith(t => backoff(logged.log(t))))
+      _ <- SqsMessageSource.clientResource[IO](blocker)(configuration.sqsMessageSourceConfiguration).use {
+        sqsClient => {
+          val retrieve = SqsMessageSource.retrieveMessage[IO, ExampleContainer](blocker, configuration.sqsMessageSourceConfiguration)(configuration.queueUri, messageParser)(sqsClient)
+          val processor = new MessageProcessor[IO, ExampleContainer](retrieve, handler)
+          for {
+            _ <- Repeater.repeat(processor.process().flatMap(_ => Backoff.resetExponentialBackoff[IO](errorBackoff))
+              .handleErrorWith(t => backoff(logged.log(t))))
+          } yield ()
+        }
+      }
     } yield ExitCode.Success
 
-    result.recoverWith {
+    outer.recoverWith {
       case ParseErrors(errors) => for {
         _ <- logged.log(errors)
       } yield ExitCode.Error

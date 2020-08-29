@@ -3,7 +3,7 @@ package com.abstractcode.eventrunner.messaging
 import java.net.URI
 
 import cats.data.OptionT
-import cats.effect.Sync
+import cats.effect.{Blocker, ContextShift, Resource, Sync}
 import cats.implicits._
 import com.abstractcode.eventrunner.MessageContainer
 import com.abstractcode.eventrunner.MessageProcessor.{MCF, MessageSource}
@@ -16,10 +16,8 @@ import software.amazon.awssdk.services.sqs.model.{DeleteMessageRequest, ReceiveM
 
 import scala.jdk.CollectionConverters._
 
-class MultipleTypeParametersExample[G[_, _, _]] {}
-
 object SqsMessageSource {
-  def retrieveMessage[F[_] : Sync, Container <: MessageContainer[_, _]](configuration: SqsMessageSourceConfiguration)(queueUri: Uri)(messageParser: sqs.model.Message => F[Container]): F[MessageSource[F, Container]] = {
+  def clientResource[F[_] : Sync : ContextShift](blocker: Blocker)(configuration: SqsMessageSourceConfiguration): Resource[F, SqsClient] = {
     def buildSqsClient: F[SqsClient] = Sync[F].delay {
       val builder = SqsClient.builder()
       configuration.sqsEnvironment match {
@@ -31,37 +29,39 @@ object SqsMessageSource {
       }
     }
 
-    buildSqsClient
-      .map(
-        client => {
-          val queueUriString = queueUri.renderString
-
-          val receiveRequest = ReceiveMessageRequest.builder()
-            .queueUrl(queueUriString)
-            .maxNumberOfMessages(1)
-            .waitTimeSeconds(configuration.waitTime.value)
-            .build()
-
-          val receiveMessage: F[Option[sqs.model.Message]] = Sync[F].delay {
-            client.receiveMessage(receiveRequest).messages().asScala.headOption
-          }
-
-          def deleteMessage(message: sqs.model.Message): F[Unit] = Sync[F].delay(
-            client.deleteMessage(
-              DeleteMessageRequest.builder()
-                .queueUrl(queueUriString)
-                .receiptHandle(message.receiptHandle())
-                .build()
-            )).map(_ => ())
-
-          () => {
-            (for {
-              sqsMessage <- OptionT(receiveMessage)
-              parsedMessage <- OptionT.liftF(messageParser(sqsMessage))
-            } yield MCF[F, Container](parsedMessage, () => deleteMessage(sqsMessage))).value
-          }
-        }
-      )
+    Resource.fromAutoCloseableBlocking(blocker)(buildSqsClient)
   }
 
+  def retrieveMessage[F[_] : Sync : ContextShift, Container <: MessageContainer[_, _]](blocker: Blocker, configuration: SqsMessageSourceConfiguration)(queueUri: Uri, messageParser: sqs.model.Message => F[Container])(sqsClient: SqsClient): MessageSource[F, Container] = {
+    val queueUriString = queueUri.renderString
+
+    val receiveRequest = ReceiveMessageRequest.builder()
+      .queueUrl(queueUriString)
+      .maxNumberOfMessages(1)
+      .waitTimeSeconds(configuration.waitTime.value)
+      .build()
+
+    val receiveMessage: F[Option[sqs.model.Message]] = blocker.blockOn {
+      Sync[F].delay {
+        sqsClient.receiveMessage(receiveRequest).messages().asScala.headOption
+      }
+    }
+
+    def deleteMessage(message: sqs.model.Message): F[Unit] = blocker.blockOn {
+      Sync[F].delay(
+        sqsClient.deleteMessage(
+          DeleteMessageRequest.builder()
+            .queueUrl(queueUriString)
+            .receiptHandle(message.receiptHandle())
+            .build()
+        )).map(_ => ())
+    }
+
+    () => {
+      (for {
+        sqsMessage <- OptionT(receiveMessage)
+        parsedMessage <- OptionT.liftF(messageParser(sqsMessage))
+      } yield MCF[F, Container](parsedMessage, () => deleteMessage(sqsMessage))).value
+    }
+  }
 }
