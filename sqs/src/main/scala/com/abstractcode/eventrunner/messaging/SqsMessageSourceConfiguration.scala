@@ -1,10 +1,10 @@
 package com.abstractcode.eventrunner.messaging
 
-import cats.data.ValidatedNec
+import cats.data.Validated.{Invalid, Valid}
+import cats.data.{Chain, Validated, ValidatedNec}
 import cats.implicits._
-import com.abstractcode.eventrunner.configuration.getOptionalUri
-import com.abstractcode.eventrunner.configuration.ParseError
-import com.abstractcode.eventrunner.configuration.ParseError.{InvalidFormat, NotProvidedOrEmpty}
+import com.abstractcode.eventrunner.configuration.ParseError.{InvalidFormat, InvalidSection, NotProvidedOrEmpty}
+import com.abstractcode.eventrunner.configuration.{ParseError, getString, getUri}
 import com.abstractcode.eventrunner.messaging.SqsMessageSourceConfiguration.{SqsEnvironment, WaitTime}
 import eu.timepit.refined._
 import eu.timepit.refined.api.Refined
@@ -27,22 +27,30 @@ object SqsMessageSourceConfiguration {
 
   def parse(env: Map[String, String]): ValidatedNec[ParseError, SqsMessageSourceConfiguration] = {
     def getSqsEnvironment: ValidatedNec[ParseError, SqsEnvironment] = {
-      val sqsUri = getOptionalUri(env)("LOCALSTACK_SQS_URI")
-      val accessKeyId = env.get("LOCALSTACK_ACCESS_KEY_ID").validNec
-      val secretAccessKey = env.get("LOCALSTACK_SECRET_ACCESS_KEY").validNec
+      val getEnvString: String => Validated[ParseError, String] = getString(env)
 
-      (sqsUri, accessKeyId, secretAccessKey).mapN {
-        case (None, None, None) => SqsProduction.validNec
-        case (Some(uri), Some(keyId), Some(secret)) => SqsLocalstack(uri, AwsBasicCredentials.create(keyId, secret)).validNec
-        case _ => ParseError("LOCALSTACK_SQS_URI", InvalidFormat).invalidNec
-      }.fold(e => e.invalid, a => a)
+      val sqsUri = getUri(env)("LOCALSTACK_SQS_URI")
+      val accessKeyId = getEnvString("LOCALSTACK_ACCESS_KEY_ID")
+      val secretAccessKey = getEnvString("LOCALSTACK_SECRET_ACCESS_KEY")
+
+      (sqsUri, accessKeyId, secretAccessKey) match {
+        case (Invalid(NotProvidedOrEmpty(_)), Invalid(NotProvidedOrEmpty(_)), Invalid(NotProvidedOrEmpty(_))) => SqsProduction.validNec
+        case (Valid(uri), Valid(keyId), Valid(secret)) => SqsLocalstack(uri, AwsBasicCredentials.create(keyId, secret)).validNec
+        case (e1, e2, e3) => InvalidSection(
+          "LocalStack configuration invalid",
+          Chain(e1, e2, e3).flatMap {
+            case Invalid(e) => Chain(e)
+            case _ => Chain.empty
+          }
+        ).invalidNec
+      }
     }
 
     def getWaitTime: ValidatedNec[ParseError, WaitTime] = (for {
-      waitEnvironment <- env.get("QUEUE_WAIT_TIME").toRight(ParseError("QUEUE_WAIT_TIME", NotProvidedOrEmpty))
-      value <- waitEnvironment.toIntOption.toRight(ParseError("QUEUE_WAIT_TIME", InvalidFormat))
+      waitEnvironment <- env.get("QUEUE_WAIT_TIME").toRight(NotProvidedOrEmpty("QUEUE_WAIT_TIME"))
+      value <- waitEnvironment.toIntOption.toRight(InvalidFormat("QUEUE_WAIT_TIME"))
       waitTime <- refineV[WaitTimeConstraint](value)
-        .leftMap(_ => ParseError("QUEUE_WAIT_TIME", InvalidFormat))
+        .leftMap(_ => InvalidFormat("QUEUE_WAIT_TIME"))
     } yield waitTime).toValidatedNec
 
     (getSqsEnvironment, getWaitTime).mapN(SqsMessageSourceConfiguration.apply)

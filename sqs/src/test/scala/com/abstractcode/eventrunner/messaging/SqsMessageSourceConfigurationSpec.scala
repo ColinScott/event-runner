@@ -1,7 +1,6 @@
 package com.abstractcode.eventrunner.messaging
 
 import cats.implicits._
-import com.abstractcode.eventrunner.configuration.ParseError
 import com.abstractcode.eventrunner.configuration.ParseError.InvalidFormat
 import com.abstractcode.eventrunner.messaging.SqsMessageSourceConfiguration.{SqsProduction, WaitTime}
 import eu.timepit.refined.scalacheck.all._
@@ -36,7 +35,7 @@ class SqsMessageSourceConfigurationSpec extends Specification with ScalaCheck {
       (waitTime: Int) =>
         val environment: Map[String, String] = Map("QUEUE_WAIT_TIME" -> waitTime.toString)
 
-        val expected = ParseError("QUEUE_WAIT_TIME", InvalidFormat).invalidNec
+        val expected = InvalidFormat("QUEUE_WAIT_TIME").invalidNec
 
         val result = SqsMessageSourceConfiguration.parse(environment)
 
