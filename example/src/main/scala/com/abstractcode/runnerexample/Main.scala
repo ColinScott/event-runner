@@ -51,7 +51,6 @@ object Main extends IOApp {
   implicit val containerDecoder: Decoder[ExampleContainer] =
     MessageContainerDecoder.build(messageDecoders)(metadataDecoder)
 
-
   def loadConfiguration[F[_]: Sync]: F[ExampleConfiguration] = for {
     env <- Sync[F].delay(sys.env)
     configuration <- ExampleConfiguration.parse(env) match {

@@ -1,7 +1,7 @@
 package com.abstractcode.eventrunner
 
-import cats.implicits._
 import cats.{Applicative, Monad}
+import cats.implicits._
 import com.abstractcode.eventrunner.MessageProcessor.{MCF, MessageSource}
 
 trait Metadata[T, MT] {
@@ -13,10 +13,12 @@ case class MessageContainer[Message, MD <: Metadata[_, _]](message: Message, met
 
 class MessageProcessor[F[_] : Monad, Container <: MessageContainer[_, _]](source: MessageSource[F, Container], handler: MessageHandler[F, Container]) {
   def process(): F[Unit] = {
-    def processContainer(containerWithFinaliser: MCF[F,Container]): F[Unit] = for {
-      _ <- handler(containerWithFinaliser.container)
-      _ <- containerWithFinaliser.finalise()
-    } yield ()
+    def processContainer(containerWithFinaliser: MCF[F,Container]): F[Unit] = {
+      for {
+        _ <- handler(containerWithFinaliser.container)
+        _ <- containerWithFinaliser.finalise()
+      } yield ()
+    }
 
     for {
       container <- source()
