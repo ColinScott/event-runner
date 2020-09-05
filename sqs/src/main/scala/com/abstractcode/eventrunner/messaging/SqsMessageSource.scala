@@ -6,7 +6,7 @@ import cats.data.OptionT
 import cats.effect.{Blocker, ContextShift, Resource, Sync}
 import cats.implicits._
 import com.abstractcode.eventrunner.MessageContainer
-import com.abstractcode.eventrunner.MessageProcessor.{MCF, MessageSource}
+import com.abstractcode.eventrunner.MessageProcessor.{MessageContainerWithFinaliser, MessageSource}
 import com.abstractcode.eventrunner.messaging.SqsMessageSourceConfiguration.{SqsLocalstack, SqsProduction}
 import org.http4s.Uri
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider
@@ -61,7 +61,7 @@ object SqsMessageSource {
       (for {
         sqsMessage <- OptionT(receiveMessage)
         parsedMessage <- OptionT.liftF(messageParser(sqsMessage))
-      } yield MCF[F, Container](parsedMessage, () => deleteMessage(sqsMessage))).value
+      } yield MessageContainerWithFinaliser[F, Container](parsedMessage, () => deleteMessage(sqsMessage))).value
     }
   }
 }

@@ -3,28 +3,29 @@ package com.abstractcode.runnerexample
 import java.util.UUID
 import java.util.concurrent.Executors
 
-import cats.{Applicative, MonadError}
+import cats.Applicative
 import cats.data.Chain
 import cats.data.Validated.{Invalid, Valid}
 import cats.effect.concurrent.{MVar, MVar2, Ref}
 import cats.effect.{Blocker, Clock, Concurrent, ContextShift, ExitCode, IO, IOApp, Sync, Timer}
 import cats.implicits._
-import com.abstractcode.eventrunner._
 import com.abstractcode.eventrunner.circe.MessageContainerDecoder
 import com.abstractcode.eventrunner.configuration.ParseErrors
 import com.abstractcode.eventrunner.logging.{CirceLogged, Logged, _}
 import com.abstractcode.eventrunner.messaging.SqsMessageSource
 import com.abstractcode.eventrunner.sqscirce.MessageParser
+import com.abstractcode.eventrunner.{ThrowableMonadError, _}
 import io.circe.{Decoder, HCursor, Json}
 import software.amazon.awssdk.services.sqs
 
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration.{FiniteDuration, MILLISECONDS, SECONDS}
+import scala.concurrent.duration.{FiniteDuration, SECONDS}
 
 object Main extends IOApp {
 
   sealed trait ExampleMessage
-  case class TestMessage(count: Int) extends ExampleMessage
+  case class FirstExampleMessage(count: Int) extends ExampleMessage
+  case class SecondExampleMessage(count: Int) extends ExampleMessage
 
   case class ExampleMetadata(transactionId: UUID, messageType: String) extends Metadata[UUID, String]
 
@@ -41,7 +42,7 @@ object Main extends IOApp {
 
   val testMessageDecoder: Decoder[ExampleMessage] = (c: HCursor) => for {
     count <- c.downField("count").as[Int]
-  } yield TestMessage(count)
+  } yield SecondExampleMessage(count)
 
   val messageDecoders: String => Option[Decoder[ExampleMessage]] = {
     case "test" => Some(testMessageDecoder)
@@ -55,24 +56,30 @@ object Main extends IOApp {
     env <- Sync[F].delay(sys.env)
     configuration <- ExampleConfiguration.parse(env) match {
       case Valid(config) => Applicative[F].pure(config)
-      case Invalid(errors) => MonadError[F, Throwable].raiseError(ParseErrors(errors))
+      case Invalid(errors) => ThrowableMonadError[F].raiseError(ParseErrors(errors))
     }
 
   } yield configuration
+
+  def buildHandler[F[_]: ThrowableMonadError](implicit logged: Logged[F, UUID]): ContainerHandler[F, ExampleContainer] = {
+
+    val messageHandlers: PartialFunction[ExampleMessage, MessageContext[F, ExampleMetadata]] = {
+      case FirstExampleMessage(count) => logged.log(s"Count: $count").local(_.transactionId)
+    }
+
+    buildMessageHandler[F, ExampleMessage, ExampleMetadata](messageHandlers, loggingFallbackHandler)
+  }
 
   def runQueue[F[_]: Sync : ContextShift : Timer](blocker: Blocker, configuration: ExampleConfiguration)(implicit logged: Logged[F, UUID], loggedGlobal: LoggedGlobal[F]): F[Unit] = {
     val messageParser: sqs.model.Message => F[ExampleContainer] = MessageParser.build[F, ExampleContainer]
 
     for {
       errorBackoff <- Ref.of[F, Int](0)
-      backoff = Backoff.exponentialBackoff[F, Unit](FiniteDuration(1, SECONDS))(1.5, FiniteDuration(1, MILLISECONDS))(errorBackoff) _
+      backoff = Backoff.exponentialBackoff[F, Unit](FiniteDuration(30, SECONDS))(1.5, FiniteDuration(1, SECONDS))(errorBackoff) _
       _ <- SqsMessageSource.clientResource[F](blocker)(configuration.sqsMessageSourceConfiguration).use {
         sqsClient => {
           val retrieve = SqsMessageSource.retrieveMessage[F, ExampleContainer](blocker, configuration.sqsMessageSourceConfiguration)(configuration.queueUri, messageParser)(sqsClient)
-          val processor = new MessageProcessor[F, ExampleContainer](retrieve, container => (for {
-            _ <- logged.error("Test", new Exception("outer", new Exception("inner")))
-            _ <- logged.log(s"Handled ${container.metadata} ${container.message}")
-          } yield ()).run(container.metadata.transactionId))
+          val processor = new MessageProcessor[F, ExampleContainer](retrieve, buildHandler)
           for {
             _ <- Repeater.repeat(processor.process().flatMap(_ => Backoff.resetExponentialBackoff[F](errorBackoff))
               .handleErrorWith(t => backoff(loggedGlobal.log(t))))
@@ -94,7 +101,7 @@ object Main extends IOApp {
       _ <- Concurrent[F].race(runQueue[F](blocker, configuration), logBlocker.blockOn(runLogPrinter[F](logSignal, logItems)))
     } yield ExitCode.Success
 
-    val recovered = MonadError[F, Throwable].recoverWith(program) {
+    val recovered = ThrowableMonadError[F].recoverWith(program) {
       case ParseErrors(errors) => for {
         _ <- loggedGlobal.log(errors)
       } yield ExitCode.Error

@@ -2,14 +2,12 @@ package com.abstractcode.eventrunner
 
 import cats.data.Ior
 import cats.implicits._
-import com.abstractcode.eventrunner.MessageProcessor.{MCF, MessageSource}
+import com.abstractcode.eventrunner.MessageProcessor.{MessageContainerWithFinaliser, MessageSource}
+import com.abstractcode.eventrunner.TestMessage.TestContainer
 import org.specs2.matcher.MatchResult
 import org.specs2.scalacheck.ScalaCheckFunction1
 import org.specs2.specification.core.SpecStructure
 import org.specs2.{ScalaCheck, Specification}
-
-case class TestMessage(message: String)
-case class TestMetadata(transactionId: String, messageType: String) extends Metadata[String, String]
 
 class MessageProcessorSpec extends Specification with ScalaCheck {
   type Test[A] = Ior[List[String], A]
@@ -26,10 +24,9 @@ class MessageProcessorSpec extends Specification with ScalaCheck {
             return only success if no message is received $shouldReturnOnlySuccessIfNoMessageIsReceived
       """
 
-  type TestContainer = MessageContainer[TestMessage, TestMetadata]
-  val alwaysSuccessHandler: MessageHandler[Test, TestContainer] = _ => ().rightIor
-  val testMessageContainer: TestContainer = MessageContainer(TestMessage("test"), TestMetadata("transaction", "test"))
-  val messageContainerWithFinaliser: MCF[Test, TestContainer] = MCF(testMessageContainer, () => ().rightIor)
+  val alwaysSuccessHandler: ContainerHandler[Test, TestContainer] = _ => ().rightIor
+  val testMessageContainer: TestContainer = MessageContainer(FirstTestMessage("test"), TestMetadata("transaction", "test"))
+  val messageContainerWithFinaliser: MessageContainerWithFinaliser[Test, TestContainer] = MessageContainerWithFinaliser(testMessageContainer, () => ().rightIor)
   val testSource: MessageSource[Test, TestContainer] = () => Some(messageContainerWithFinaliser).rightIor
 
   def shouldProcessSuccessfully: MatchResult[Boolean] = {
@@ -43,10 +40,13 @@ class MessageProcessorSpec extends Specification with ScalaCheck {
   def shouldReceiveExpectedMessage: ScalaCheckFunction1[String, MatchResult[Option[List[String]]]] =
   prop {
     (message: String) => {
-      val handler: MessageHandler[Test, TestContainer] = received => Ior.both(List(received.message.message), ())
+      val handler: ContainerHandler[Test, TestContainer] = {
+        case MessageContainer(FirstTestMessage(message), _) => Ior.both(List(message), ())
+        case _ => Ior.left(List("Unknown test message"))
+      }
 
-      val messageContainer: TestContainer = MessageContainer(TestMessage(message), TestMetadata("transaction", "test"))
-      val withFinaliser: MCF[Test, TestContainer] = MCF(messageContainer, () => ().rightIor)
+      val messageContainer: TestContainer = MessageContainer(FirstTestMessage(message), TestMetadata("transaction", "test"))
+      val withFinaliser: MessageContainerWithFinaliser[Test, TestContainer] = MessageContainerWithFinaliser(messageContainer, () => ().rightIor)
       val testSource: MessageSource[Test, TestContainer] = () => Some(withFinaliser).rightIor
 
       val processor = new MessageProcessor[Test, TestContainer](testSource, handler)
@@ -66,7 +66,7 @@ class MessageProcessorSpec extends Specification with ScalaCheck {
   }
 
   def shouldFailIfProcessingFails: MatchResult[Option[List[String]]] = {
-    val handler: MessageHandler[Test, TestContainer] = _ => List("failed").leftIor
+    val handler: ContainerHandler[Test, TestContainer] = _ => List("failed").leftIor
 
     val processor = new MessageProcessor[Test, TestContainer](testSource, handler)
 
@@ -76,7 +76,7 @@ class MessageProcessorSpec extends Specification with ScalaCheck {
   }
 
   def shouldFailIfFinalisationFails: MatchResult[Option[List[String]]] = {
-    val failingMessageContainerWithFinaliser: MCF[Test, TestContainer] = MCF[Test, TestContainer](testMessageContainer, () => List("failed").leftIor)
+    val failingMessageContainerWithFinaliser: MessageContainerWithFinaliser[Test, TestContainer] = MessageContainerWithFinaliser[Test, TestContainer](testMessageContainer, () => List("failed").leftIor)
 
     val processor = new MessageProcessor[Test, TestContainer](() => Some(failingMessageContainerWithFinaliser).rightIor, alwaysSuccessHandler)
 
@@ -86,7 +86,7 @@ class MessageProcessorSpec extends Specification with ScalaCheck {
   }
 
   def shouldCallOperationsInExpectedOrder: MatchResult[Option[List[String]]] = {
-    val testLoggingFinaliser: MCF[Test, TestContainer] = MCF(testMessageContainer, () => Ior.both(List("finalised"), ()))
+    val testLoggingFinaliser: MessageContainerWithFinaliser[Test, TestContainer] = MessageContainerWithFinaliser(testMessageContainer, () => Ior.both(List("finalised"), ()))
 
     val processor = new MessageProcessor[Test, TestContainer](() => Some(testLoggingFinaliser).rightIor, _ => Ior.both(List("handled"), ()))
 
