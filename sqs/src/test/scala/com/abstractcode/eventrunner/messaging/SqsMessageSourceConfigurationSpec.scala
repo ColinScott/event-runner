@@ -1,6 +1,6 @@
 package com.abstractcode.eventrunner.messaging
 
-import cats.implicits._
+import cats.syntax.all._
 import com.abstractcode.eventrunner.configuration.ParseError.InvalidFormat
 import com.abstractcode.eventrunner.messaging.SqsMessageSourceConfiguration.{SqsProduction, WaitTime}
 import eu.timepit.refined.scalacheck.all._

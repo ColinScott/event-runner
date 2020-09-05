@@ -1,12 +1,12 @@
 package com.abstractcode.eventrunner
 
-import cats.implicits._
 import cats.data.{Ior, Kleisli}
+import cats.syntax.all._
 import com.abstractcode.eventrunner.TestMessage._
 import org.specs2.matcher.MatchResult
 import org.specs2.scalacheck.{ScalaCheckFunction1, ScalaCheckFunction2}
-import org.specs2.{ScalaCheck, Specification}
 import org.specs2.specification.core.SpecStructure
+import org.specs2.{ScalaCheck, Specification}
 
 class BuildMessageHandlerSpec extends Specification with ScalaCheck {
   type Test[A] = Ior[List[String], A]

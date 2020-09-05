@@ -1,7 +1,7 @@
 package com.abstractcode.eventrunner
 
 import cats.data.{NonEmptyChain, Validated, ValidatedNec}
-import cats.implicits._
+import cats.syntax.all._
 import com.abstractcode.eventrunner.configuration.ParseError._
 import org.http4s.Uri
 

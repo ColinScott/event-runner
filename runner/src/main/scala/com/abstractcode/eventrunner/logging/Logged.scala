@@ -6,7 +6,7 @@ import cats.Monad
 import cats.data.{Chain, Kleisli}
 import cats.effect.concurrent.{MVar2, Ref}
 import cats.effect.{Clock, Concurrent, Sync}
-import cats.implicits._
+import cats.syntax.all._
 import com.abstractcode.eventrunner.{MessageContext, Metadata}
 import io.circe.syntax._
 import io.circe.{Encoder, Json}

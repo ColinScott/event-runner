@@ -7,7 +7,7 @@ import cats.data.Chain
 import cats.data.Validated.{Invalid, Valid}
 import cats.effect.concurrent.{MVar, MVar2, Ref}
 import cats.effect.{Blocker, Clock, Concurrent, ContextShift, ExitCode, IO, IOApp, Sync, Timer}
-import cats.implicits._
+import cats.syntax.all._
 import com.abstractcode.eventrunner.configuration.ParseErrors
 import com.abstractcode.eventrunner.logging.{CirceLogged, Logged, _}
 import com.abstractcode.eventrunner.messaging.SqsMessageSource

@@ -1,7 +1,7 @@
 package com.abstractcode.eventrunner
 
 import cats.data.Ior
-import cats.implicits._
+import cats.syntax.all._
 import com.abstractcode.eventrunner.MessageProcessor.{MessageContainerWithFinaliser, MessageSource}
 import com.abstractcode.eventrunner.TestMessage.TestContainer
 import org.specs2.matcher.MatchResult

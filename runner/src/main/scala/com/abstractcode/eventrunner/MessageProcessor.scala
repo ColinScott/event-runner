@@ -1,7 +1,7 @@
 package com.abstractcode.eventrunner
 
 import cats.{Applicative, Monad}
-import cats.implicits._
+import cats.syntax.all._
 import com.abstractcode.eventrunner.MessageProcessor.{MessageContainerWithFinaliser, MessageSource}
 
 trait Metadata[T, MT] {

@@ -1,7 +1,7 @@
 package com.abstractcode.eventrunner
 
 import cats.Monad
-import cats.implicits._
+import cats.syntax.all._
 
 object Repeater {
   def repeat[F[_]: ThrowableMonadError](process: F[Unit]): F[Unit] = {

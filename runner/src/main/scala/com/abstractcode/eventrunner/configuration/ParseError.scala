@@ -2,7 +2,7 @@ package com.abstractcode.eventrunner.configuration
 
 import cats.Show
 import cats.data.{Chain, NonEmptyChain}
-import cats.implicits._
+import cats.syntax.all._
 import io.circe.syntax._
 import io.circe.{Encoder, Json}
 

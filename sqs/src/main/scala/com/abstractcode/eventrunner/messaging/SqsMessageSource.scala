@@ -4,7 +4,7 @@ import java.net.URI
 
 import cats.data.OptionT
 import cats.effect.{Blocker, ContextShift, Resource, Sync}
-import cats.implicits._
+import cats.syntax.all._
 import com.abstractcode.eventrunner.MessageContainer
 import com.abstractcode.eventrunner.MessageProcessor.{MessageContainerWithFinaliser, MessageSource}
 import com.abstractcode.eventrunner.messaging.SqsMessageSourceConfiguration.{SqsLocalstack, SqsProduction}

@@ -3,7 +3,7 @@ package com.abstractcode.eventrunner
 import cats.Monad
 import cats.effect.Timer
 import cats.effect.concurrent.Ref
-import cats.implicits._
+import cats.syntax.all._
 
 import scala.concurrent.duration.{Duration, FiniteDuration}
 

@@ -1,6 +1,6 @@
 package com.abstractcode.eventrunner.sqscirce
 
-import cats.implicits._
+import cats.syntax.all._
 import com.abstractcode.eventrunner.{MessageContainer, ThrowableMonadError}
 import io.circe.{Decoder, parser}
 import software.amazon.awssdk.services.sqs

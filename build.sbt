@@ -9,8 +9,8 @@ lazy val commonSettings = Seq(
   scalacOptions ++= compilerOptions
 )
 
-val amazonSdkVersion = "2.14.3"
-val catsVersion = "2.1.1"
+val amazonSdkVersion = "2.14.12"
+val catsVersion = "2.2.0"
 val catsEffectVersion = "2.2.0-RC3"
 val circeVersion = "0.13.0"
 val http4sVersion = "0.21.7"
@@ -163,5 +163,3 @@ lazy val compilerOptions = Seq(
 )
 
 lazy val skipOnPublishSettings = Seq(skip in publish := true, publish := (()), publishLocal := (()), publishArtifact := false, publishTo := None)
-
-addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.11.0" cross CrossVersion.full)

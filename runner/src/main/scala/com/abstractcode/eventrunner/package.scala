@@ -1,7 +1,7 @@
 package com.abstractcode
 
 import cats.data.Kleisli
-import cats.implicits._
+import cats.syntax.all._
 import cats.{Applicative, MonadError, Show}
 import com.abstractcode.eventrunner.ProcessingError.UnknownHandler
 import com.abstractcode.eventrunner.logging.Logged

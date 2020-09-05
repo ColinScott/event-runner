@@ -4,7 +4,6 @@ import cats.Show
 import cats.data.Kleisli
 import cats.effect.IO
 import cats.effect.concurrent.Ref
-import cats.implicits._
 import com.abstractcode.eventrunner.ProcessingError.UnknownHandler
 import com.abstractcode.eventrunner.TestMessage._
 import com.abstractcode.eventrunner.logging.Logged

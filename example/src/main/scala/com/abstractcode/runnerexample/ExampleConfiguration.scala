@@ -1,7 +1,7 @@
 package com.abstractcode.runnerexample
 
 import cats.data.ValidatedNec
-import cats.implicits._
+import cats.syntax.all._
 import com.abstractcode.eventrunner.configuration.{ParseError, getUriNec}
 import com.abstractcode.eventrunner.messaging.SqsMessageSourceConfiguration
 import org.http4s.Uri

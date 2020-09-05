@@ -2,7 +2,7 @@ package com.abstractcode.eventrunner.messaging
 
 import cats.data.Validated.{Invalid, Valid}
 import cats.data.{Chain, Validated, ValidatedNec}
-import cats.implicits._
+import cats.syntax.all._
 import com.abstractcode.eventrunner.configuration.ParseError.{InvalidFormat, InvalidSection, NotProvidedOrEmpty}
 import com.abstractcode.eventrunner.configuration.{ParseError, getString, getUri}
 import com.abstractcode.eventrunner.messaging.SqsMessageSourceConfiguration.{SqsEnvironment, WaitTime}
