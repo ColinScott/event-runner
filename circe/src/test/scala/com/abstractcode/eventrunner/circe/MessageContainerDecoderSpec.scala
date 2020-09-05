@@ -12,7 +12,10 @@ import org.specs2.specification.core.SpecStructure
 import org.specs2.{ScalaCheck, Specification}
 
 class MessageContainerDecoderSpec extends Specification with ScalaCheck {
-  case class TestMetadata(transactionId: UUID, messageType: String) extends Metadata[UUID, String]
+  type TransactionId = UUID
+  type MessageType = String
+
+  case class TestMetadata(transactionId: TransactionId, messageType: MessageType) extends Metadata[TransactionId, MessageType]
 
   sealed trait TestMessage
   case class FirstTestMessage(count: Int) extends TestMessage
@@ -20,8 +23,8 @@ class MessageContainerDecoderSpec extends Specification with ScalaCheck {
   type TestContainer = MessageContainer[TestMessage, TestMetadata]
 
   val metadataDecoder: Decoder[TestMetadata] = (c: HCursor) => for {
-    transactionId <- c.downField("transactionId").as[UUID]
-    messageType <- c.downField("messageType").as[String]
+    transactionId <- c.downField("transactionId").as[TransactionId]
+    messageType <- c.downField("messageType").as[MessageType]
   } yield TestMetadata(transactionId, messageType)
 
   val firstMessageDecoder: Decoder[TestMessage] = (c: HCursor) => for {
@@ -38,10 +41,10 @@ class MessageContainerDecoderSpec extends Specification with ScalaCheck {
             error on decode failure $errorOnDecodeFailure
     """
 
-  def decodeWithKnownType: ScalaCheckFunction3[UUID, String, Int, MatchResult[Either[circe.Error, TestMessage]]] =
-    prop { (transactionId: UUID, messageType: String, count: Int) =>
+  def decodeWithKnownType: ScalaCheckFunction3[TransactionId, MessageType, Int, MatchResult[Either[circe.Error, TestMessage]]] =
+    prop { (transactionId: TransactionId, messageType: MessageType, count: Int) =>
 
-      val messageDecoders: String => Option[Decoder[TestMessage]] = {
+      val messageDecoders: MessageType => Option[Decoder[TestMessage]] = {
         case `messageType` => Some(firstMessageDecoder)
         case _ => None
       }
@@ -60,10 +63,10 @@ class MessageContainerDecoderSpec extends Specification with ScalaCheck {
       result.map(_.message) should beRight(FirstTestMessage(count))
     }.setGen2(Gen.alphaStr)
 
-  def errorOnUnknownType: ScalaCheckFunction3[UUID, String, Int, MatchResult[Either[circe.Error, TestContainer]]] =
+  def errorOnUnknownType: ScalaCheckFunction3[TransactionId, MessageType, Int, MatchResult[Either[circe.Error, TestContainer]]] =
     prop {
-      (transactionId: UUID, messageType: String, count: Int) =>
-        val messageDecoders: String => Option[Decoder[TestMessage]] = _ => None
+      (transactionId: TransactionId, messageType: MessageType, count: Int) =>
+        val messageDecoders: MessageType => Option[Decoder[TestMessage]] = _ => None
 
         implicit val decoder: Decoder[TestContainer] = MessageContainerDecoder.build(messageDecoders)(metadataDecoder)
 
@@ -79,10 +82,10 @@ class MessageContainerDecoderSpec extends Specification with ScalaCheck {
         result should beLeft(DecodingFailure(s"No decoder for message type $messageType", Nil))
     }.setGen2(Gen.alphaStr)
 
-  def errorOnMissingType: ScalaCheckFunction2[UUID, Int, MatchResult[Either[circe.Error, TestContainer]]] =
+  def errorOnMissingType: ScalaCheckFunction2[TransactionId, Int, MatchResult[Either[circe.Error, TestContainer]]] =
     prop {
-      (transactionId: UUID, count: Int) =>
-        val messageDecoders: String => Option[Decoder[TestMessage]] = _ => None
+      (transactionId: TransactionId, count: Int) =>
+        val messageDecoders: MessageType => Option[Decoder[TestMessage]] = _ => None
 
         implicit val decoder: Decoder[TestContainer] = MessageContainerDecoder.build(messageDecoders)(metadataDecoder)
 
@@ -97,10 +100,10 @@ class MessageContainerDecoderSpec extends Specification with ScalaCheck {
         result should beLeft()
     }
 
-  def errorOnMissingTransactionId: ScalaCheckFunction2[UUID, Int, MatchResult[Either[circe.Error, TestContainer]]] =
+  def errorOnMissingTransactionId: ScalaCheckFunction2[TransactionId, Int, MatchResult[Either[circe.Error, TestContainer]]] =
     prop {
-      (transactionId: UUID, count: Int) =>
-        val messageDecoders: String => Option[Decoder[TestMessage]] = _ => None
+      (transactionId: TransactionId, count: Int) =>
+        val messageDecoders: MessageType => Option[Decoder[TestMessage]] = _ => None
 
         implicit val decoder: Decoder[TestContainer] = MessageContainerDecoder.build(messageDecoders)(metadataDecoder)
 
@@ -115,10 +118,10 @@ class MessageContainerDecoderSpec extends Specification with ScalaCheck {
         result should beLeft()
     }
 
-  def errorOnDecodeFailure: ScalaCheckFunction2[UUID, String, MatchResult[Either[circe.Error, TestContainer]]] =
+  def errorOnDecodeFailure: ScalaCheckFunction2[TransactionId, MessageType, MatchResult[Either[circe.Error, TestContainer]]] =
     prop {
-      (transactionId: UUID, messageType: String) =>
-        val messageDecoders: String => Option[Decoder[TestMessage]] = {
+      (transactionId: TransactionId, messageType: MessageType) =>
+        val messageDecoders: MessageType => Option[Decoder[TestMessage]] = {
           case `messageType` => Some(firstMessageDecoder)
           case _ => None
         }

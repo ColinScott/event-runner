@@ -25,12 +25,12 @@ class LoggingFallbackHandlerSpec extends Specification with ScalaCheck {
   def logMessageDidNotHaveHandler: ScalaCheckFunction2[FirstTestMessage, TestMetadata, MatchResult[Any]] =
     prop {
       (testMessage: FirstTestMessage, testMetadata: TestMetadata) => {
-        def buildLogged(ref: Ref[IO, List[String]]): Logged[IO, String] = new Logged[IO, String] {
-          def log[D](logData: => D)(implicit encoder: Encoder[D]): MessageContext[IO, String] =
+        def buildLogged(ref: Ref[IO, List[String]]): Logged[IO, TestMetadata] = new Logged[IO, TestMetadata] {
+          def log[D](logData: => D)(implicit encoder: Encoder[D]): MessageContext[IO, TestMetadata] =
             Kleisli(
-              transactionId => {
+              metadata => {
                 val updates = List(
-                  transactionId,
+                  metadata.transactionId,
                   logData match {
                     case s: String if s.contains(testMetadata.messageType) => "received expected log value"
                     case _ => "did not receive expected log value"
@@ -40,14 +40,14 @@ class LoggingFallbackHandlerSpec extends Specification with ScalaCheck {
               }
             )
 
-          def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): MessageContext[IO, String] =
+          def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): MessageContext[IO, TestMetadata] =
             Kleisli(_ => IO.raiseError(new Exception("logged as error")))
         }
 
         val result = for {
           ref <- Ref.of[IO, List[String]](Nil)
           logged = buildLogged(ref)
-          handler = loggingFallbackHandler(ThrowableMonadError[IO], logged, Show[String])
+          handler = loggingFallbackHandler[IO, TestMessage, String, TestMetadata](ThrowableMonadError[IO], logged, Show[String])
           _ <- handler(testMessage).run(testMetadata).redeem(_ => (), _ => ())
           value <- ref.get
         } yield value
@@ -58,12 +58,12 @@ class LoggingFallbackHandlerSpec extends Specification with ScalaCheck {
 
   def returnError: ScalaCheckFunction2[FirstTestMessage, TestMetadata, MatchResult[Either[Throwable, Unit]]] = prop {
     (testMessage: FirstTestMessage, testMetadata: TestMetadata) => {
-      implicit val logged: Logged[IO, String] = new Logged[IO, String] {
-        def log[D](logData: => D)(implicit encoder: Encoder[D]): MessageContext[IO, String] = Kleisli(_ => IO.unit)
-        def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): MessageContext[IO, String] = Kleisli(_ => IO.unit)
+      implicit val logged: Logged[IO, TestMetadata] = new Logged[IO, TestMetadata] {
+        def log[D](logData: => D)(implicit encoder: Encoder[D]): MessageContext[IO, TestMetadata] = Kleisli(_ => IO.unit)
+        def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): MessageContext[IO, TestMetadata] = Kleisli(_ => IO.unit)
       }
 
-      val handler: TestMessage => MessageContext[IO, TestMetadata] = loggingFallbackHandler
+      val handler: TestMessage => MessageContext[IO, TestMetadata] = loggingFallbackHandler[IO, TestMessage, String, TestMetadata](ThrowableMonadError[IO], logged, Show[String])
 
       val result = handler(testMessage).run(testMetadata).attempt.unsafeRunSync()
 

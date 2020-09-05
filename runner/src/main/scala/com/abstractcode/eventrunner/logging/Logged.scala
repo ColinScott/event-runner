@@ -7,18 +7,19 @@ import cats.data.{Chain, Kleisli}
 import cats.effect.concurrent.{MVar2, Ref}
 import cats.effect.{Clock, Concurrent, Sync}
 import cats.implicits._
+import com.abstractcode.eventrunner.{MessageContext, Metadata}
 import io.circe.syntax._
 import io.circe.{Encoder, Json}
 
 import scala.concurrent.duration.MILLISECONDS
 
-trait Logged[F[_], T] {
-  def log[D](logData: => D)(implicit encoder: Encoder[D]): Kleisli[F, T, Unit]
-  def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): Kleisli[F, T, Unit]
+trait Logged[F[_], -MD <: Metadata[_, _]] {
+  def log[D](logData: => D)(implicit encoder: Encoder[D]): MessageContext[F, MD]
+  def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): MessageContext[F, MD]
 }
 
 object Logged {
-  def apply[F[_], T](implicit logged: Logged[F, T]): Logged[F, T] = logged
+  def apply[F[_], MD <: Metadata[_, _]](implicit logged: Logged[F, MD]): Logged[F, MD] = logged
 }
 
 trait LoggedGlobal[F[_]] {
@@ -30,14 +31,14 @@ object LoggedGlobal {
   def apply[F[_]](implicit loggedGlobal: LoggedGlobal[F]): LoggedGlobal[F] = loggedGlobal
 }
 
-class CirceLogged[F[_]: Monad : Clock, T](logSignal: MVar2[F, Unit], logItemsRef: Ref[F, Chain[Json]])(implicit idEncoder: Encoder[T]) extends Logged[F, T] with CirceLoggedBackend[F] {
+class CirceLogged[F[_]: Monad : Clock, T, MD <: Metadata[T, _]](logSignal: MVar2[F, Unit], logItemsRef: Ref[F, Chain[Json]])(implicit idEncoder: Encoder[T]) extends Logged[F, MD] with CirceLoggedBackend[F] {
   val signal: MVar2[F, Unit] = logSignal
   val logItems: Ref[F, Chain[Json]] = logItemsRef
 
-  def log[D](logData: => D)(implicit encoder: Encoder[D]): Kleisli[F, T, Unit] =
-    Kleisli(transactionId => logImpl[D](Some(transactionId.asJson), logData))
+  def log[D](logData: => D)(implicit encoder: Encoder[D]): MessageContext[F, MD] =
+    Kleisli(metadata => logImpl[D](Some(metadata.transactionId.asJson), logData))
 
-  def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): Kleisli[F, T, Unit] =
+  def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): MessageContext[F, MD] =
     log(ErrorWrapper(message, error))
 }
 

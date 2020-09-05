@@ -1,6 +1,5 @@
 package com.abstractcode.runnerexample
 
-import java.util.UUID
 import java.util.concurrent.Executors
 
 import cats.Applicative
@@ -9,49 +8,20 @@ import cats.data.Validated.{Invalid, Valid}
 import cats.effect.concurrent.{MVar, MVar2, Ref}
 import cats.effect.{Blocker, Clock, Concurrent, ContextShift, ExitCode, IO, IOApp, Sync, Timer}
 import cats.implicits._
-import com.abstractcode.eventrunner.circe.MessageContainerDecoder
 import com.abstractcode.eventrunner.configuration.ParseErrors
 import com.abstractcode.eventrunner.logging.{CirceLogged, Logged, _}
 import com.abstractcode.eventrunner.messaging.SqsMessageSource
 import com.abstractcode.eventrunner.sqscirce.MessageParser
 import com.abstractcode.eventrunner.{ThrowableMonadError, _}
-import io.circe.{Decoder, HCursor, Json}
+import com.abstractcode.runnerexample.ExampleMessages._
+import com.abstractcode.runnerexample.Handlers._
+import io.circe.Json
 import software.amazon.awssdk.services.sqs
 
 import scala.concurrent.ExecutionContext
 import scala.concurrent.duration.{FiniteDuration, SECONDS}
 
 object Main extends IOApp {
-
-  sealed trait ExampleMessage
-  case class FirstExampleMessage(count: Int) extends ExampleMessage
-  case class SecondExampleMessage(count: Int) extends ExampleMessage
-
-  case class ExampleMetadata(transactionId: UUID, messageType: String) extends Metadata[UUID, String]
-
-  type ExampleContainer = MessageContainer[ExampleMessage, ExampleMetadata]
-
-  val metadataDecoder: Decoder[ExampleMetadata] = (c: HCursor) => {
-    val metadata = c.downField("metadata")
-
-    for {
-      transactionId <- metadata.downField("transactionId").as[UUID]
-      messageType <- metadata.downField("messageType").as[String]
-    } yield ExampleMetadata(transactionId, messageType)
-  }
-
-  val testMessageDecoder: Decoder[ExampleMessage] = (c: HCursor) => for {
-    count <- c.downField("count").as[Int]
-  } yield SecondExampleMessage(count)
-
-  val messageDecoders: String => Option[Decoder[ExampleMessage]] = {
-    case "test" => Some(testMessageDecoder)
-    case _ => None
-  }
-
-  implicit val containerDecoder: Decoder[ExampleContainer] =
-    MessageContainerDecoder.build(messageDecoders)(metadataDecoder)
-
   def loadConfiguration[F[_]: Sync]: F[ExampleConfiguration] = for {
     env <- Sync[F].delay(sys.env)
     configuration <- ExampleConfiguration.parse(env) match {
@@ -61,16 +31,10 @@ object Main extends IOApp {
 
   } yield configuration
 
-  def buildHandler[F[_]: ThrowableMonadError](implicit logged: Logged[F, UUID]): ContainerHandler[F, ExampleContainer] = {
+  def buildHandler[F[_]: ThrowableMonadError](implicit logged: Logged[F, ExampleMetadata]): ContainerHandler[F, ExampleContainer] =
+    buildMessageHandler(firstMessageHandler orElse secondMessageHandler, loggingFallbackHandler[F, ExampleMessage, MessageType, ExampleMetadata])
 
-    val messageHandlers: PartialFunction[ExampleMessage, MessageContext[F, ExampleMetadata]] = {
-      case FirstExampleMessage(count) => logged.log(s"Count: $count").local(_.transactionId)
-    }
-
-    buildMessageHandler[F, ExampleMessage, ExampleMetadata](messageHandlers, loggingFallbackHandler)
-  }
-
-  def runQueue[F[_]: Sync : ContextShift : Timer](blocker: Blocker, configuration: ExampleConfiguration)(implicit logged: Logged[F, UUID], loggedGlobal: LoggedGlobal[F]): F[Unit] = {
+  def runQueue[F[_]: Sync : ContextShift : Timer](blocker: Blocker, configuration: ExampleConfiguration)(implicit logged: Logged[F, ExampleMetadata], loggedGlobal: LoggedGlobal[F]): F[Unit] = {
     val messageParser: sqs.model.Message => F[ExampleContainer] = MessageParser.build[F, ExampleContainer]
 
     for {
@@ -94,9 +58,10 @@ object Main extends IOApp {
   } yield ()
 
   def startTasks[F[_]: Concurrent : ContextShift : Clock : Timer](blocker: Blocker, logBlocker: Blocker)(logSignal: MVar2[F, Unit], logItems: Ref[F, Chain[Json]]): F[ExitCode] = {
-    implicit val logged: Logged[F, UUID] = new CirceLogged[F, UUID](logSignal, logItems)
+    implicit val logged: Logged[F, ExampleMetadata] = new CirceLogged[F, TransactionId, ExampleMetadata](logSignal, logItems)
     implicit val loggedGlobal: LoggedGlobal[F] = new CirceLoggedGlobal[F](logSignal, logItems)
     val program = for {
+      _ <- loggedGlobal.log("Started")
       configuration <- loadConfiguration
       _ <- Concurrent[F].race(runQueue[F](blocker, configuration), logBlocker.blockOn(runLogPrinter[F](logSignal, logItems)))
     } yield ExitCode.Success
