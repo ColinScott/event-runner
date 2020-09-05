@@ -60,7 +60,7 @@ object Main extends IOApp {
 
   } yield configuration
 
-  def runQueue[F[_]: Sync : ContextShift : Timer](blocker: Blocker, configuration: ExampleConfiguration)(implicit logged: Logged[F, UUID]): F[Unit] = {
+  def runQueue[F[_]: Sync : ContextShift : Timer](blocker: Blocker, configuration: ExampleConfiguration)(implicit logged: Logged[F, UUID], loggedGlobal: LoggedGlobal[F]): F[Unit] = {
     val messageParser: sqs.model.Message => F[ExampleContainer] = MessageParser.build[F, ExampleContainer]
 
     for {
@@ -69,12 +69,13 @@ object Main extends IOApp {
       _ <- SqsMessageSource.clientResource[F](blocker)(configuration.sqsMessageSourceConfiguration).use {
         sqsClient => {
           val retrieve = SqsMessageSource.retrieveMessage[F, ExampleContainer](blocker, configuration.sqsMessageSourceConfiguration)(configuration.queueUri, messageParser)(sqsClient)
-          val processor = new MessageProcessor[F, ExampleContainer](retrieve, {
-            case container => logged.log(s"Handled ${container.metadata} ${container.message}").run(container.metadata.transactionId)
-          })
+          val processor = new MessageProcessor[F, ExampleContainer](retrieve, container => (for {
+            _ <- logged.error("Test", new Exception("outer", new Exception("inner")))
+            _ <- logged.log(s"Handled ${container.metadata} ${container.message}")
+          } yield ()).run(container.metadata.transactionId))
           for {
             _ <- Repeater.repeat(processor.process().flatMap(_ => Backoff.resetExponentialBackoff[F](errorBackoff))
-              .handleErrorWith(t => backoff(logged.logGlobal(t))))
+              .handleErrorWith(t => backoff(loggedGlobal.log(t))))
           } yield ()
         }
       }
@@ -82,11 +83,12 @@ object Main extends IOApp {
   }
 
   def runLogPrinter[F[_]: Concurrent](logSignal: MVar2[F, Unit], logItems: Ref[F, Chain[Json]]): F[Unit] = for {
-    _ <- Repeater.repeat(CirceLogged.writeLogs[F](logSignal, logItems))
+    _ <- Repeater.repeat(CirceLoggedBackend.writeLogs[F](logSignal, logItems))
   } yield ()
 
   def startTasks[F[_]: Concurrent : ContextShift : Clock : Timer](blocker: Blocker, logBlocker: Blocker)(logSignal: MVar2[F, Unit], logItems: Ref[F, Chain[Json]]): F[ExitCode] = {
     implicit val logged: Logged[F, UUID] = new CirceLogged[F, UUID](logSignal, logItems)
+    implicit val loggedGlobal: LoggedGlobal[F] = new CirceLoggedGlobal[F](logSignal, logItems)
     val program = for {
       configuration <- loadConfiguration
       _ <- Concurrent[F].race(runQueue[F](blocker, configuration), logBlocker.blockOn(runLogPrinter[F](logSignal, logItems)))
@@ -94,11 +96,11 @@ object Main extends IOApp {
 
     val recovered = MonadError[F, Throwable].recoverWith(program) {
       case ParseErrors(errors) => for {
-        _ <- logged.logGlobal(errors)
+        _ <- loggedGlobal.log(errors)
       } yield ExitCode.Error
     }
 
-    Sync[F].guarantee(recovered)(CirceLogged.flushLogs[F](logItems))
+    Sync[F].guarantee(recovered)(CirceLoggedBackend.flushLogs[F](logItems))
   }
 
   def run(args: List[String]): IO[ExitCode] = {
