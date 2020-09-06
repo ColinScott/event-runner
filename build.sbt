@@ -13,12 +13,20 @@ val amazonSdkVersion = "2.14.12"
 val catsVersion = "2.2.0"
 val catsEffectVersion = "2.2.0-RC3"
 val circeVersion = "0.13.0"
+val fs2Version = "2.4.4"
 val http4sVersion = "0.21.7"
 val logbackVersion = "1.2.3"
 val refinedVersion = "0.9.15"
 
 val scalaCheckVersion = "1.14.3"
 val spec2Version = "4.10.3"
+
+
+lazy val circeDependencies = Seq(
+  "io.circe" %% "circe-core" % circeVersion,
+  "io.circe" %% "circe-generic" % circeVersion,
+  "io.circe" %% "circe-parser" % circeVersion,
+)
 
 lazy val commonDependencies = Seq(
   "org.typelevel" %% "cats-core" % catsVersion,
@@ -28,6 +36,15 @@ lazy val commonDependencies = Seq(
   "org.specs2" %% "specs2-core" % spec2Version % Test,
   "org.specs2" %% "specs2-scalacheck" % spec2Version % Test,
   "org.specs2" %% "specs2-matcher-extra" % spec2Version % Test,
+)
+
+lazy val exampleDependencies = Seq(
+  "ch.qos.logback" % "logback-classic" % logbackVersion,
+)
+
+lazy val fs2Dependencies = Seq(
+  "co.fs2" %% "fs2-core" % fs2Version,
+  "co.fs2" %% "fs2-io" % fs2Version
 )
 
 lazy val http4sDependencies = Seq(
@@ -45,21 +62,11 @@ lazy val sqsDependencies = Seq(
   "eu.timepit" %% "refined-scalacheck" % refinedVersion % Test,
 )
 
-lazy val circeDependencies = Seq(
-  "io.circe" %% "circe-core" % circeVersion,
-  "io.circe" %% "circe-generic" % circeVersion,
-  "io.circe" %% "circe-parser" % circeVersion,
-)
-
-lazy val exampleDependencies = Seq(
-  "ch.qos.logback" % "logback-classic" % logbackVersion,
-)
-
 lazy val eventRunner = project
   .in(file("runner"))
   .settings(
     name := "event-runner",
-    libraryDependencies ++= commonDependencies ++ http4sDependencies ++ circeDependencies,
+    libraryDependencies ++= commonDependencies ++ circeDependencies ++ fs2Dependencies ++ http4sDependencies,
     commonSettings
   )
 
@@ -67,7 +74,7 @@ lazy val sqs = project
   .in(file("sqs"))
   .settings(
     name := "event-runner-sqs",
-    libraryDependencies ++= commonDependencies ++ sqsDependencies ++ http4sDependencies,
+    libraryDependencies ++= commonDependencies ++ http4sDependencies ++ sqsDependencies,
     commonSettings
   )
   .dependsOn(eventRunner)
@@ -76,7 +83,7 @@ lazy val circe = project
   .in(file("circe"))
   .settings(
     name := "event-runner-circe",
-    libraryDependencies ++= commonDependencies ++ circeDependencies,
+    libraryDependencies ++= circeDependencies ++ commonDependencies,
     commonSettings
   )
   .dependsOn(eventRunner)
@@ -85,7 +92,7 @@ lazy val sqsCirce = project
   .in(file("sqs-circe"))
   .settings(
     name := "event-runner-sqs-circe",
-    libraryDependencies ++= commonDependencies ++ circeDependencies,
+    libraryDependencies ++= circeDependencies ++ commonDependencies,
     commonSettings
   )
   .dependsOn(eventRunner, sqs, circe)

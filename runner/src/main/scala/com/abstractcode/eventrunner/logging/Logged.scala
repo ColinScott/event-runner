@@ -3,11 +3,11 @@ package com.abstractcode.eventrunner.logging
 import java.time.{Instant, ZoneOffset, ZonedDateTime}
 
 import cats.Monad
-import cats.data.{Chain, Kleisli}
-import cats.effect.concurrent.{MVar2, Ref}
+import cats.data.Kleisli
 import cats.effect.{Clock, Concurrent, Sync}
 import cats.syntax.all._
 import com.abstractcode.eventrunner.{MessageContext, Metadata}
+import fs2.concurrent.{Dequeue, Enqueue}
 import io.circe.syntax._
 import io.circe.{Encoder, Json}
 
@@ -31,9 +31,8 @@ object LoggedGlobal {
   def apply[F[_]](implicit loggedGlobal: LoggedGlobal[F]): LoggedGlobal[F] = loggedGlobal
 }
 
-class CirceLogged[F[_]: Monad : Clock, T, MD <: Metadata[T, _]](logSignal: MVar2[F, Unit], logItemsRef: Ref[F, Chain[Json]])(implicit idEncoder: Encoder[T]) extends Logged[F, MD] with CirceLoggedBackend[F] {
-  val signal: MVar2[F, Unit] = logSignal
-  val logItems: Ref[F, Chain[Json]] = logItemsRef
+class CirceLogged[F[_]: Monad : Clock, T, MD <: Metadata[T, _]](queue: Enqueue[F, Json])(implicit idEncoder: Encoder[T]) extends Logged[F, MD] with CirceLoggedBackend[F] {
+  val enqueue: Enqueue[F, Json] = queue
 
   def log[D](logData: => D)(implicit encoder: Encoder[D]): MessageContext[F, MD] =
     Kleisli(metadata => logImpl[D](Some(metadata.transactionId.asJson), logData))
@@ -42,9 +41,8 @@ class CirceLogged[F[_]: Monad : Clock, T, MD <: Metadata[T, _]](logSignal: MVar2
     log(ErrorWrapper(message, error))
 }
 
-class CirceLoggedGlobal[F[_]: Monad : Clock](logSignal: MVar2[F, Unit], logItemsRef: Ref[F, Chain[Json]]) extends LoggedGlobal[F] with CirceLoggedBackend[F] {
-  val signal: MVar2[F, Unit] = logSignal
-  val logItems: Ref[F, Chain[Json]] = logItemsRef
+class CirceLoggedGlobal[F[_]: Monad : Clock](queue: Enqueue[F, Json]) extends LoggedGlobal[F] with CirceLoggedBackend[F] {
+  val enqueue: Enqueue[F, Json] = queue
 
   def log[D](logData: => D)(implicit encoder: Encoder[D]): F[Unit] =
     logImpl[D](None, logData)
@@ -54,8 +52,7 @@ class CirceLoggedGlobal[F[_]: Monad : Clock](logSignal: MVar2[F, Unit], logItems
 }
 
 trait CirceLoggedBackend[F[_]] {
-  val signal: MVar2[F, Unit]
-  val logItems: Ref[F, Chain[Json]]
+  val enqueue: Enqueue[F, Json]
 
   case class LogFormat[D](transactionId: Option[Json], timestamp: ZonedDateTime, logData: D)
   case class ErrorWrapper(message: String, error: Throwable)
@@ -77,20 +74,12 @@ trait CirceLoggedBackend[F[_]] {
       now <- C.realTime(MILLISECONDS)
       timestamp = ZonedDateTime.ofInstant(Instant.ofEpochMilli(now), ZoneOffset.UTC)
       logFormat = LogFormat(transactionId, timestamp, logData).asJson
-      _ <- logItems.update(items => items.append(logFormat))
-      _ <- signal.tryPut(())
+      _ <- enqueue.enqueue1(logFormat)
     } yield ()
   }
 }
 
 object CirceLoggedBackend {
-  def writeLogs[F[_]: Concurrent](signal: MVar2[F, Unit], logItems: Ref[F, Chain[Json]]): F[Unit] = for {
-    _ <- signal.take
-    _ <- flushLogs[F](logItems)
-  } yield ()
-
-  def flushLogs[F[_]: Concurrent](logItems: Ref[F, Chain[Json]]): F[Unit] = for {
-    items <- logItems.getAndSet(Chain.empty)
-    _ <- Sync[F].delay(println(items.map(_.noSpaces).mkString_("\n")))
-  } yield ()
+  def writeLogs[F[_]: Concurrent](queue: Dequeue[F, Json]): F[Unit] =
+    queue.dequeue.evalMap(l => Sync[F].delay(println(l.noSpaces))).compile.drain
 }

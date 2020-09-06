@@ -3,9 +3,8 @@ package com.abstractcode.runnerexample
 import java.util.concurrent.Executors
 
 import cats.Applicative
-import cats.data.Chain
 import cats.data.Validated.{Invalid, Valid}
-import cats.effect.concurrent.{MVar, MVar2, Ref}
+import cats.effect.concurrent.Ref
 import cats.effect.{Blocker, Clock, Concurrent, ContextShift, ExitCode, IO, IOApp, Sync, Timer}
 import cats.syntax.all._
 import com.abstractcode.eventrunner.configuration.ParseErrors
@@ -15,6 +14,7 @@ import com.abstractcode.eventrunner.sqscirce.MessageParser
 import com.abstractcode.eventrunner.{ThrowableMonadError, _}
 import com.abstractcode.runnerexample.ExampleMessages._
 import com.abstractcode.runnerexample.Handlers._
+import fs2.concurrent.Queue
 import io.circe.Json
 import software.amazon.awssdk.services.sqs
 
@@ -53,26 +53,20 @@ object Main extends IOApp {
     } yield ()
   }
 
-  def runLogPrinter[F[_]: Concurrent](logSignal: MVar2[F, Unit], logItems: Ref[F, Chain[Json]]): F[Unit] = for {
-    _ <- Repeater.repeat(CirceLoggedBackend.writeLogs[F](logSignal, logItems))
-  } yield ()
-
-  def startTasks[F[_]: Concurrent : ContextShift : Clock : Timer](blocker: Blocker, logBlocker: Blocker)(logSignal: MVar2[F, Unit], logItems: Ref[F, Chain[Json]]): F[ExitCode] = {
-    implicit val logged: Logged[F, ExampleMetadata] = new CirceLogged[F, TransactionId, ExampleMetadata](logSignal, logItems)
-    implicit val loggedGlobal: LoggedGlobal[F] = new CirceLoggedGlobal[F](logSignal, logItems)
+  def startTasks[F[_]: Concurrent : ContextShift : Clock : Timer](blocker: Blocker, logBlocker: Blocker)(queue: Queue[F, Json]): F[ExitCode] = {
+    implicit val logged: Logged[F, ExampleMetadata] = new CirceLogged[F, TransactionId, ExampleMetadata](queue)
+    implicit val loggedGlobal: LoggedGlobal[F] = new CirceLoggedGlobal[F](queue)
     val program = for {
       _ <- loggedGlobal.log("Started")
       configuration <- loadConfiguration
-      _ <- Concurrent[F].race(runQueue[F](blocker, configuration), logBlocker.blockOn(runLogPrinter[F](logSignal, logItems)))
+      _ <- Concurrent[F].race(runQueue[F](blocker, configuration), logBlocker.blockOn(CirceLoggedBackend.writeLogs[F](queue)))
     } yield ExitCode.Success
 
-    val recovered = ThrowableMonadError[F].recoverWith(program) {
+    ThrowableMonadError[F].recoverWith(program) {
       case ParseErrors(errors) => for {
         _ <- loggedGlobal.log(errors)
       } yield ExitCode.Error
     }
-
-    Sync[F].guarantee(recovered)(CirceLoggedBackend.flushLogs[F](logItems))
   }
 
   def run(args: List[String]): IO[ExitCode] = {
@@ -80,10 +74,8 @@ object Main extends IOApp {
     val logBlocker = Blocker.liftExecutionContext(ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1)))
 
     for {
-      logSignal <- MVar[IO].empty[Unit]
-      logItems <- Ref.of[IO, Chain[Json]](Chain.empty)
-
-      result <- startTasks[IO](blocker, logBlocker)(logSignal, logItems)
+      logQueue <- Queue.circularBuffer[IO, Json](1024)
+      result <- startTasks[IO](blocker, logBlocker)(logQueue)
     } yield result
   }
 }
