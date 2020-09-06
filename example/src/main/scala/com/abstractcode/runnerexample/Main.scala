@@ -59,7 +59,7 @@ object Main extends IOApp {
     val program = for {
       _ <- loggedGlobal.log("Started")
       configuration <- loadConfiguration
-      _ <- Concurrent[F].race(runQueue[F](blocker, configuration), logBlocker.blockOn(CirceLoggedBackend.writeLogs[F](queue)))
+      _ <- Concurrent[F].race(runQueue[F](blocker, configuration), CirceLoggedBackend.writeLogs[F](queue, logBlocker))
     } yield ExitCode.Success
 
     ThrowableMonadError[F].recoverWith(program) {

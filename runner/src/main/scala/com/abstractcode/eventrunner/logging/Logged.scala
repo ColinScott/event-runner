@@ -4,7 +4,7 @@ import java.time.{Instant, ZoneOffset, ZonedDateTime}
 
 import cats.Monad
 import cats.data.Kleisli
-import cats.effect.{Clock, Concurrent, Sync}
+import cats.effect.{Blocker, Clock, Concurrent, ContextShift, Sync}
 import cats.syntax.all._
 import com.abstractcode.eventrunner.{MessageContext, Metadata}
 import fs2.concurrent.{Dequeue, Enqueue}
@@ -80,6 +80,6 @@ trait CirceLoggedBackend[F[_]] {
 }
 
 object CirceLoggedBackend {
-  def writeLogs[F[_]: Concurrent](queue: Dequeue[F, Json]): F[Unit] =
-    queue.dequeue.evalMap(l => Sync[F].delay(println(l.noSpaces))).compile.drain
+  def writeLogs[F[_]: Concurrent : ContextShift](queue: Dequeue[F, Json], blocker: Blocker): F[Unit] =
+    blocker.blockOn(queue.dequeue.evalMap(l => Sync[F].delay(println(l.noSpaces))).compile.drain)
 }
