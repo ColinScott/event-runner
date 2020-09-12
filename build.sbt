@@ -1,3 +1,5 @@
+import sbt.addCompilerPlugin
+
 ThisBuild / organization := "com.abstractcode"
 ThisBuild / organizationName := "Colin David Scott"
 ThisBuild / licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0"))
@@ -6,7 +8,9 @@ ThisBuild / version := "0.1.0"
 ThisBuild / scalaVersion := "2.13.3"
 
 lazy val commonSettings = Seq(
-  scalacOptions ++= compilerOptions
+  scalacOptions ++= compilerOptions,
+
+  addCompilerPlugin("org.typelevel" %% "kind-projector" % "0.11.0" cross CrossVersion.full)
 )
 
 val amazonSdkVersion = "2.14.12"

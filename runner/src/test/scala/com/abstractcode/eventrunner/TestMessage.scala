@@ -21,6 +21,7 @@ object TestMessage {
   } yield TestMetadata(transactionId, messageType)
 
   implicit val arbitraryFirstTestMessage: Arbitrary[FirstTestMessage] = Arbitrary(firstTestMessageGen)
+  implicit val arbitraryTestMessage: Arbitrary[TestMessage] = Arbitrary(testMessageGen)
   implicit val arbitraryTestMetadata: Arbitrary[TestMetadata] = Arbitrary(testMetadataGen)
 
   implicit val arbitraryMessageContainer: Arbitrary[TestContainer] = Arbitrary(

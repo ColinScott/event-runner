@@ -1,7 +1,6 @@
 package com.abstractcode.eventrunner
 
 import cats.Show
-import cats.data.Kleisli
 import cats.effect.IO
 import cats.effect.concurrent.Ref
 import com.abstractcode.eventrunner.ProcessingError.UnknownHandler
@@ -24,23 +23,18 @@ class LoggingFallbackHandlerSpec extends Specification with ScalaCheck {
   def logMessageDidNotHaveHandler: ScalaCheckFunction2[FirstTestMessage, TestMetadata, MatchResult[Any]] =
     prop {
       (testMessage: FirstTestMessage, testMetadata: TestMetadata) => {
-        def buildLogged(ref: Ref[IO, List[String]]): Logged[IO, TestMetadata] = new Logged[IO, TestMetadata] {
-          def log[D](logData: => D)(implicit encoder: Encoder[D]): MessageContext[IO, TestMetadata] =
-            Kleisli(
-              metadata => {
-                val updates = List(
-                  metadata.transactionId,
-                  logData match {
-                    case s: String if s.contains(testMetadata.messageType) => "received expected log value"
-                    case _ => "did not receive expected log value"
-                  }
-                )
-                ref.update(ls => ls ::: updates)
-              }
-            )
+        def buildLogged(ref: Ref[IO, List[String]]): Logged[IO] = new Logged[IO] {
+          def log[D](logData: => D)(implicit encoder: Encoder[D]): IO[Unit] = ref.update(ls => {
+            val item = logData match {
+              case s: String if s.contains(testMetadata.messageType) => "received expected log value"
+              case _ => "did not receive expected log value"
+            }
 
-          def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): MessageContext[IO, TestMetadata] =
-            Kleisli(_ => IO.raiseError(new Exception("logged as error")))
+            item :: ls
+          })
+
+          def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): IO[Unit] =
+            IO.raiseError(new Exception("logged as error"))
         }
 
         val result = for {
@@ -51,15 +45,15 @@ class LoggingFallbackHandlerSpec extends Specification with ScalaCheck {
           value <- ref.get
         } yield value
 
-        result.attempt.unsafeRunSync() shouldEqual Right(List(testMetadata.transactionId, "received expected log value"))
+        result.attempt.unsafeRunSync() shouldEqual Right(List("received expected log value"))
       }
     }
 
   def returnError: ScalaCheckFunction2[FirstTestMessage, TestMetadata, MatchResult[Either[Throwable, Unit]]] = prop {
     (testMessage: FirstTestMessage, testMetadata: TestMetadata) => {
-      implicit val logged: Logged[IO, TestMetadata] = new Logged[IO, TestMetadata] {
-        def log[D](logData: => D)(implicit encoder: Encoder[D]): MessageContext[IO, TestMetadata] = Kleisli(_ => IO.unit)
-        def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): MessageContext[IO, TestMetadata] = Kleisli(_ => IO.unit)
+      implicit val logged: Logged[IO] = new Logged[IO] {
+        def log[D](logData: => D)(implicit encoder: Encoder[D]): IO[Unit] = IO.unit
+        def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): IO[Unit] = IO.unit
       }
 
       val handler: TestMessage => MessageContext[IO, TestMetadata] = loggingFallbackHandler[IO, TestMessage, String, TestMetadata](ThrowableMonadError[IO], logged, Show[String])

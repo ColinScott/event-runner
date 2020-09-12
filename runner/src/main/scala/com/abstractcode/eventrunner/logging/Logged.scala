@@ -13,35 +13,26 @@ import io.circe.{Encoder, Json}
 
 import scala.concurrent.duration.MILLISECONDS
 
-trait Logged[F[_], -MD <: Metadata[_, _]] {
-  def log[D](logData: => D)(implicit encoder: Encoder[D]): MessageContext[F, MD]
-  def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): MessageContext[F, MD]
-}
-
-object Logged {
-  def apply[F[_], MD <: Metadata[_, _]](implicit logged: Logged[F, MD]): Logged[F, MD] = logged
-}
-
-trait LoggedGlobal[F[_]] {
+trait Logged[F[_]] {
   def log[D](logData: => D)(implicit encoder: Encoder[D]): F[Unit]
   def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): F[Unit]
 }
 
-object LoggedGlobal {
-  def apply[F[_]](implicit loggedGlobal: LoggedGlobal[F]): LoggedGlobal[F] = loggedGlobal
+object Logged {
+  def apply[F[_]](implicit logged: Logged[F]): Logged[F] = logged
 }
 
-class CirceLogged[F[_]: Monad : Clock, T, MD <: Metadata[T, _]](queue: Enqueue[F, Json])(implicit idEncoder: Encoder[T]) extends Logged[F, MD] with CirceLoggedBackend[F] {
+class CirceLogged[F[_]: Monad : Clock, Transaction, MD <: Metadata[Transaction, _]](queue: Enqueue[F, Json])(implicit idEncoder: Encoder[Transaction]) extends Logged[Kleisli[F, MD, *]] with CirceLoggedBackend[F] {
   val enqueue: Enqueue[F, Json] = queue
 
-  def log[D](logData: => D)(implicit encoder: Encoder[D]): MessageContext[F, MD] =
+  def log[D](logData: => D)(implicit encoder: Encoder[D]): Kleisli[F, MD, Unit] =
     Kleisli(metadata => logImpl[D](Some(metadata.transactionId.asJson), logData))
 
   def error(message: => String, error: => Throwable)(implicit throwableEncoder: Encoder[Throwable]): MessageContext[F, MD] =
     log(ErrorWrapper(message, error))
 }
 
-class CirceLoggedGlobal[F[_]: Monad : Clock](queue: Enqueue[F, Json]) extends LoggedGlobal[F] with CirceLoggedBackend[F] {
+class CirceLoggedGlobal[F[_]: Monad : Clock](queue: Enqueue[F, Json]) extends Logged[F] with CirceLoggedBackend[F] {
   val enqueue: Enqueue[F, Json] = queue
 
   def log[D](logData: => D)(implicit encoder: Encoder[D]): F[Unit] =
