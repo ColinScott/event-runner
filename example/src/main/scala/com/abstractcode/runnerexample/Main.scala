@@ -2,25 +2,23 @@ package com.abstractcode.runnerexample
 
 import java.util.concurrent.Executors
 
+import cats.Applicative
 import cats.data.Kleisli
 import cats.data.Validated.{Invalid, Valid}
-import cats.effect.concurrent.Ref
 import cats.effect.{Blocker, Clock, Concurrent, ContextShift, ExitCode, IO, IOApp, Sync, Timer}
 import cats.syntax.all._
-import cats.Applicative
 import com.abstractcode.eventrunner._
 import com.abstractcode.eventrunner.configuration.ParseErrors
 import com.abstractcode.eventrunner.logging._
-import com.abstractcode.eventrunner.messaging.SqsMessageSource
+import com.abstractcode.eventrunner.messaging.{retrieveFromSqs, runQueue}
 import com.abstractcode.eventrunner.sqscirce.MessageParser
 import com.abstractcode.runnerexample.ExampleMessages._
 import com.abstractcode.runnerexample.Handlers._
 import fs2.concurrent.Queue
 import io.circe.Json
-import software.amazon.awssdk.services.sqs
+import software.amazon.awssdk.services.sqs.SqsClient
 
 import scala.concurrent.ExecutionContext
-import scala.concurrent.duration.{FiniteDuration, SECONDS}
 
 object Main extends IOApp {
   type ExampleIO[A] = Kleisli[IO, ExampleMetadata, A]
@@ -35,37 +33,24 @@ object Main extends IOApp {
 
   } yield configuration
 
-  def compose[F[_]: ThrowableMonadError : Logged](implicit logged: Logged[ExampleF[F, *]]): MessageHandler[ExampleF[F, *], ExampleMessage] = {
-    val fallback: ExampleMessage => Kleisli[F, ExampleMetadata, Unit] = loggingFallbackHandler[F, ExampleMessage, MessageType, ExampleMetadata]
-    buildMessageHandler[ExampleF[F, *], ExampleMessage](firstMessageHandler[ExampleF[F, *]].orElse(secondMessageHandler[ExampleF[F, *]]), fallback)
-  }
-
-  def runQueue[F[_]: Sync : ContextShift: Clock : Timer : Logged](blocker: Blocker, configuration: ExampleConfiguration, logQueue: Queue[F, Json]): F[Unit] = {
-    val messageParser: sqs.model.Message => F[ExampleContainer] = MessageParser.build[F, ExampleContainer]
-    implicit val logged: CirceLogged[F, TransactionId, ExampleMetadata] = new CirceLogged[F, TransactionId, ExampleMetadata](logQueue)
-
-    for {
-      errorBackoff <- Ref.of[F, Int](0)
-      backoff = Backoff.exponentialBackoff[F, Unit](FiniteDuration(30, SECONDS))(1.5, FiniteDuration(1, SECONDS))(errorBackoff) _
-      _ <- SqsMessageSource.clientResource[F](blocker)(configuration.sqsMessageSourceConfiguration).use {
-        sqsClient => {
-          val retrieve = SqsMessageSource.retrieveMessage[F, ExampleContainer](blocker, configuration.sqsMessageSourceConfiguration)(configuration.queueUri, messageParser)(sqsClient)
-          val processor = new MessageProcessor[F, ExampleMessage, ExampleMetadata](retrieve, compose[F])
-          for {
-            _ <- Repeater.repeat(processor.process().flatMap(_ => Backoff.resetExponentialBackoff[F](errorBackoff))
-              .handleErrorWith(t => backoff(Logged[F].log(t))))
-          } yield ()
-        }
-      }
-    } yield ()
-  }
-
   def startTasks[F[_]: Concurrent : ContextShift : Clock : Timer](blocker: Blocker, logBlocker: Blocker)(logQueue: Queue[F, Json]): F[ExitCode] = {
     implicit val loggedGlobal: Logged[F] = new CirceLoggedGlobal[F](logQueue)
+
+    def runFirstQueue(configuration: ExampleConfiguration): F[Unit] = {
+      val retrieve = retrieveFromSqs(blocker, configuration.sqsMessageSourceConfiguration, configuration.queueUri,  MessageParser.build[F, ExampleContainer])
+      val handlers: Logged[Kleisli[F, ExampleMetadata, *]] => PartialFunction[ExampleMessage, Kleisli[F, ExampleMetadata, Unit]] =
+        logged => {
+          implicit val l: Logged[Kleisli[F, ExampleMetadata, *]] = logged
+          firstMessageHandler[ExampleF[F, *]].orElse(secondMessageHandler[ExampleF[F, *]])
+        }
+      val messageProcessor = buildMessageProcessor[F, ExampleMetadata, TransactionId, MessageType, ExampleMessage, SqsClient](logQueue, retrieve, handlers)
+      runQueue[F, ExampleMetadata, TransactionId, MessageType, ExampleMessage](blocker, configuration.sqsMessageSourceConfiguration, messageProcessor)
+    }
+
     val program = for {
       _ <- loggedGlobal.log("Started")
       configuration <- loadConfiguration
-      _ <- Concurrent[F].race(runQueue(blocker, configuration, logQueue), CirceLoggedBackend.writeLogs[F](logQueue, logBlocker))
+      _ <- Concurrent[F].race(runFirstQueue(configuration), CirceLoggedBackend.writeLogs[F](logQueue, logBlocker))
     } yield ExitCode.Success
 
     ThrowableMonadError[F].recoverWith(program) {

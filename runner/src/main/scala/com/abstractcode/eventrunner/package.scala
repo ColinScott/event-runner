@@ -1,10 +1,14 @@
 package com.abstractcode
 
 import cats.data.Kleisli
+import cats.effect.Clock
 import cats.syntax.all._
 import cats.{MonadError, Show}
+import com.abstractcode.eventrunner.MessageProcessor.MessageSource
 import com.abstractcode.eventrunner.ProcessingError.UnknownHandler
-import com.abstractcode.eventrunner.logging.Logged
+import com.abstractcode.eventrunner.logging.{CirceLogged, Logged}
+import fs2.concurrent.Queue
+import io.circe.{Encoder, Json}
 
 package object eventrunner {
   type ThrowableMonadError[F[_]] = MonadError[F, Throwable]
@@ -15,8 +19,7 @@ package object eventrunner {
 
   type MessageHandler[F[_], Message] = Message => F[Unit]
 
-  type MessageAction[F[_], -MD <: Metadata[_, _], A] = Kleisli[F, MD, A]
-  type MessageContext[F[_], -MD <: Metadata[_, _]] = MessageAction[F, MD, Unit]
+  type MessageContext[F[_], -MD <: Metadata[_, _]] = Kleisli[F, MD, Unit]
 
   def buildMessageHandler[F[_], Message](handler: PartialFunction[Message, F[Unit]], fallback: Message => F[Unit]): MessageHandler[F, Message] =
     message => handler.applyOrElse(message, fallback)
@@ -28,4 +31,18 @@ package object eventrunner {
         _ <- ThrowableMonadError[F].raiseError[Unit](UnknownHandler(metadata.messageType))
       } yield ()
     )
+
+  def buildMessageProcessor[F[_] : ThrowableMonadError : Clock : Logged, MD <: Metadata[Transaction, MessageType], Transaction, MessageType, Message, Context](
+    logQueue: Queue[F, Json],
+    retrieveWithClient: Context => MessageSource[F, MessageContainer[Message, MD]],
+    handlers: Logged[Kleisli[F, MD, *]] => PartialFunction[Message, Kleisli[F, MD, Unit]]
+  )(
+    implicit transactionIdEncoder: Encoder[Transaction], showType: Show[MessageType]
+  ): Context => MessageProcessor[F, Message, MD] = {
+    val logged: CirceLogged[F, Transaction, MD] = new CirceLogged[F, Transaction, MD](logQueue)
+
+    val messageHandler = buildMessageHandler[Kleisli[F, MD, *], Message](handlers(logged), loggingFallbackHandler[F, Message, MessageType, MD])
+
+    (context: Context) => new MessageProcessor[F, Message, MD](retrieveWithClient(context), messageHandler)
+  }
 }
